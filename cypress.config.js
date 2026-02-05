@@ -11,14 +11,19 @@ require("dotenv").config();
 
 module.exports = defineConfig({
   e2e: {
-    baseUrl: process.env.CYPRESS_BASE_URL,
+    // ✅ fallback added (CRITICAL)
+    baseUrl:
+      process.env.CYPRESS_BASE_URL ||
+      "https://opensource-demo.orangehrmlive.com",
+
     specPattern: "cypress/e2e/features/**/*.feature",
+    supportFile: "cypress/support/e2e.js",
 
     async setupNodeEvents(on, config) {
-      // ✅ Cucumber plugin
+      // Cucumber plugin
       await addCucumberPreprocessorPlugin(on, config);
 
-      // ✅ Esbuild bundler
+      // Esbuild bundler
       on(
         "file:preprocessor",
         createBundler({
@@ -26,10 +31,8 @@ module.exports = defineConfig({
         })
       );
 
-      // ✅ Firefox-only logic
-
-
-
+      // 🔍 Debug proof (shows in CI logs)
+      console.log("✅ Cypress baseUrl:", config.baseUrl);
 
       return config;
     },
