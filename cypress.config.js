@@ -23,6 +23,9 @@ module.exports = defineConfig({
 
     chromeWebSecurity: false,
     experimentalModifyObstructiveThirdPartyCode: true,
+    screenshotsFolder: "cypress/screenshots",
+    screenshotOnRunFailure: true,
+    video: false,
 
     async setupNodeEvents(on, config) {
       await addCucumberPreprocessorPlugin(on, config);
