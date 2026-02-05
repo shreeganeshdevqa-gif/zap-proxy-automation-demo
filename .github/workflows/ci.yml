@@ -4,111 +4,96 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   zap-cypress:
     runs-on: ubuntu-latest
 
+    services:
+      zap:
+        image: ghcr.io/zaproxy/zaproxy:stable
+        ports:
+          - 8080:8080
+        options: >
+          --health-cmd "curl -s http://localhost:8080 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ------------------------
-      # Node / Cypress
-      # ------------------------
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Run Cypress tests
-        run: npx cypress run --browser chrome
-
-      # ------------------------
-      # Generate Cucumber HTML Report
-      # ------------------------
-      - name: Generate Cucumber HTML Report
-        run: |
-          mkdir -p reports/cucumber
-          npx multiple-cucumber-html-reporter \
-            --jsonDir reports/cucumber \
-            --reportPath reports/cucumber/html \
-            --reportName "Cypress Cucumber Report"
-
-      # ------------------------
-      # Prepare ZAP reports folder
-      # ------------------------
-      - name: Prepare ZAP reports folder
+      - name: Prepare report folders
         run: |
           mkdir -p reports/zap
-          chmod -R 777 reports
+          mkdir -p reports/cucumber
+          mkdir -p cypress/cucumber-json
 
-      # ------------------------
-      # ZAP Spider Scan
-      # ------------------------
+      # ===============================
+      # ZAP SPIDER SCAN
+      # ===============================
       - name: ZAP Spider Scan
-        continue-on-error: true
         run: |
-          docker run --rm \
-            --user root \
-            -v $(pwd)/reports/zap:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-spider.py \
-            -t https://opensource-demo.orangehrmlive.com \
-            -r zap-spider-report.html
+          docker exec zap zap.sh -cmd \
+            -quickurl https://opensource-demo.orangehrmlive.com \
+            -spider \
+            -quickout reports/zap/zap-spider.html
 
-      # ------------------------
-      # ZAP Passive Scan
-      # ------------------------
-      - name: ZAP Passive Scan
-        continue-on-error: true
-        run: |
-          docker run --rm \
-            --user root \
-            -v $(pwd)/reports/zap:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
-            -t https://opensource-demo.orangehrmlive.com \
-            -r zap-passive-report.html \
-            -I
-
-      # ------------------------
-      # ZAP Active Scan
-      # ------------------------
+      # ===============================
+      # ZAP ACTIVE SCAN
+      # ===============================
       - name: ZAP Active Scan
-        continue-on-error: true
         run: |
-          docker run --rm \
-            --user root \
-            -v $(pwd)/reports/zap:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-full-scan.py \
-            -t https://opensource-demo.orangehrmlive.com \
-            -r zap-active-report.html \
-            -I
+          docker exec zap zap.sh -cmd \
+            -quickurl https://opensource-demo.orangehrmlive.com \
+            -activeScan \
+            -quickout reports/zap/zap-active.html
 
-      # ------------------------
-      # Upload All Reports
-      # ------------------------
-      - name: Upload Security Reports
+      # ===============================
+      # CYPRESS TESTS (PASSIVE SCAN)
+      # ===============================
+      - name: Run Cypress via ZAP Proxy
+        env:
+          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
+          HTTP_PROXY: http://localhost:8080
+          HTTPS_PROXY: http://localhost:8080
+          NO_PROXY: localhost,127.0.0.1
+        run: |
+          npx cypress run --browser chrome
+
+      # ===============================
+      # ZAP PASSIVE SCAN REPORT
+      # ===============================
+      - name: Generate ZAP Passive Scan Report
+        run: |
+          docker exec zap zap.sh -cmd \
+            -quickurl https://opensource-demo.orangehrmlive.com \
+            -quickout reports/zap/zap-passive.html
+
+      # ===============================
+      # CUCUMBER HTML REPORT
+      # ===============================
+      - name: Generate Cucumber HTML Report
+        run: node scripts/cucumber-report.js
+
+      # ===============================
+      # UPLOAD ARTIFACTS
+      # ===============================
+      - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-security-reports
-          path: reports/zap
-
-      - name: Upload Cucumber Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: cucumber-html-report
-          path: reports/cucumber/html
-
-      - name: Upload Cypress Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-artifacts
+          name: zap-and-cypress-reports
           path: |
+            reports
             cypress/screenshots
             cypress/videos

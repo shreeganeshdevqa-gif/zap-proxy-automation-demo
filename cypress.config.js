@@ -27,13 +27,13 @@ module.exports = defineConfig({
     screenshotOnRunFailure: true,
     video: false,
     env: {
-  cucumber: {
-    json: {
-      enabled: true,
-      output: "reports/cucumber/cucumber.json"
-    }
-  }
+  cucumberJson: {
+    generate: true,
+    outputFolder: "cypress/cucumber-json",
+    filePrefix: "",
+  },
 },
+
 
 
     async setupNodeEvents(on, config) {
