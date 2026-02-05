@@ -1,0 +1,43 @@
+name: Cypress CI (Firefox + Proxy)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:   # allows manual run from GitHub UI
+
+jobs:
+  cypress-tests:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: cypress-bdd-project
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      # -------------------------------
+      # Firefox – NO PROXY
+      # -------------------------------
+      - name: Run Cypress - Firefox (No Proxy)
+        run: npm run test:firefox
+
+      # -------------------------------
+      # Firefox – WITH ZAP PROXY
+      # -------------------------------
+      - name: Run Cypress - Firefox (With Proxy)
+        env:
+          HTTP_PROXY: http://localhost:8080
+          HTTPS_PROXY: http://localhost:8080
+          NO_PROXY: localhost,127.0.0.1
+        run: npm run test:firefox -- --headed
