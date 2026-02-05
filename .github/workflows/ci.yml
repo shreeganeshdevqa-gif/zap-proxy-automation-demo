@@ -1,7 +1,9 @@
-name: ZAP + Cypress CI
+name: Cypress + ZAP Security Scan
 
 on:
   push:
+    branches: [ main ]
+  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -10,76 +12,71 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------
+      # Checkout repository
+      # -------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # -------------------------
+      # Setup Node.js
+      # -------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
+      # -------------------------
+      # Install dependencies
+      # -------------------------
       - name: Install dependencies
         run: npm ci
 
       # -------------------------
-      # Start OWASP ZAP
+      # Run Cypress tests (Chrome)
       # -------------------------
-      - name: Start OWASP ZAP (daemon)
-        run: |
-          docker pull ghcr.io/zaproxy/zaproxy:stable
-          docker run -d \
-            --name zap \
-            -p 8080:8080 \
-            -p 8090:8090 \
-            -v ${{ github.workspace }}/reports:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -daemon \
-              -host 0.0.0.0 \
-              -port 8080 \
-              -config api.disablekey=true
-
-      - name: Wait for ZAP to be ready
-        run: sleep 20
-
-      # -------------------------
-      # Cypress via ZAP proxy
-      # -------------------------
-      - name: Run Cypress (Chrome via ZAP)
+      - name: Run Cypress Tests (Chrome)
         env:
           CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
-          HTTP_PROXY: http://localhost:8080
-          HTTPS_PROXY: http://localhost:8080
-          NO_PROXY: localhost,127.0.0.1
         run: npx cypress run --browser chrome
 
       # -------------------------
-      # ZAP Spider Scan
+      # Create reports directory
       # -------------------------
-      - name: ZAP Spider Scan
-        run: |
-          docker exec zap zap-cli spider https://opensource-demo.orangehrmlive.com
-          docker exec zap zap-cli report -o /zap/wrk/zap-spider-report.html -f html
+      - name: Prepare reports directory
+        run: mkdir -p reports
 
       # -------------------------
-      # ZAP Active Scan
+      # ZAP Passive Scan (Baseline)
       # -------------------------
-      - name: ZAP Active Scan
+      - name: ZAP Passive Scan (Baseline)
         run: |
-          docker exec zap zap-cli active-scan https://opensource-demo.orangehrmlive.com
-          docker exec zap zap-cli report -o /zap/wrk/zap-active-report.html -f html
+          docker run --rm \
+            -v ${{ github.workspace }}/reports:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t https://opensource-demo.orangehrmlive.com \
+              -r zap-passive-report.html
 
       # -------------------------
-      # Upload Reports
+      # ZAP Spider + Active Scan
       # -------------------------
-      - name: Upload ZAP Reports
+      - name: ZAP Spider + Active Scan
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/reports:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+              -t https://opensource-demo.orangehrmlive.com \
+              -r zap-active-report.html
+
+      # -------------------------
+      # Upload reports as artifacts
+      # -------------------------
+      - name: Upload ZAP & Cypress Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-reports
-          path: reports/
-
-      - name: Upload Cypress Screenshots
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots
+          name: security-and-test-reports
+          path: |
+            reports
+            cypress/screenshots
