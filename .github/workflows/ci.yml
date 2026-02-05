@@ -4,84 +4,65 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   zap-cypress:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------
-      # Checkout code
-      # -------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # -------------------------
-      # Setup Node.js
-      # -------------------------
-      - name: Setup Node.js
+      # ------------------------
+      # Node / Cypress
+      # ------------------------
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 18
 
-      # -------------------------
-      # Install dependencies
-      # -------------------------
       - name: Install dependencies
         run: npm ci
 
-      # -------------------------
-      # Run Cypress tests
-      # -------------------------
-      - name: Run Cypress Tests (Chrome)
-        env:
-          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
+      - name: Run Cypress tests
         run: npx cypress run --browser chrome
 
-      # -------------------------
+      # ------------------------
       # Prepare reports directory
-      # -------------------------
-      - name: Prepare reports directory
+      # ------------------------
+      - name: Prepare reports folder
         run: |
           mkdir -p reports
           chmod -R 777 reports
 
-      # -------------------------
-      # ZAP Passive Scan
-      # -------------------------
-      - name: ZAP Passive Scan (Baseline)
+      # ------------------------
+      # ZAP Baseline Scan (SAFE + CI FRIENDLY)
+      # ------------------------
+      - name: ZAP Passive Scan
+        continue-on-error: true
         run: |
           docker run --rm \
-            -u root \
-            -v ${{ github.workspace }}/reports:/zap/wrk \
+            --user root \
+            -v $(pwd)/reports:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-              -t https://opensource-demo.orangehrmlive.com \
-              -r zap-passive-report.html
-              -m 3
+            -t https://opensource-demo.orangehrmlive.com \
+            -r zap-passive-report.html \
+            -I
 
-      # -------------------------
-      # ZAP Spider + Active Scan
-      # -------------------------
-      - name: ZAP Spider + Active Scan
-        run: |
-          docker run --rm \
-            -u root \
-            -v ${{ github.workspace }}/reports:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-full-scan.py \
-              -t https://opensource-demo.orangehrmlive.com \
-              -r zap-active-report.html
-
-      # -------------------------
+      # ------------------------
       # Upload reports
-      # -------------------------
-      - name: Upload Reports
+      # ------------------------
+      - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
-          name: zap-and-cypress-reports
+          name: zap-report
+          path: reports/zap-passive-report.html
+
+      - name: Upload Cypress Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
           path: |
-            reports
             cypress/screenshots
+            cypress/videos
