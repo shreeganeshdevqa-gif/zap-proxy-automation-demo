@@ -1,0 +1,77 @@
+# ======================
+# Node.js
+# ======================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ======================
+# Environment files
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# Build / coverage
+# ======================
+dist/
+build/
+coverage/
+.nyc_output/
+
+# ======================
+# Logs
+# ======================
+logs/
+*.log
+
+# ======================
+# OS files
+# ======================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ======================
+# IDE / Editor
+# ======================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+*.iml
+
+# ======================
+# Cypress
+# ======================
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+
+# Cypress cache (optional – usually safe to ignore)
+~/.cache/Cypress
+
+# ======================
+# Test reports
+# ======================
+reports/
+allure-results/
+allure-report/
+
+# ======================
+# GitHub Actions / CI
+# ======================
+.env.ci
+.env.local
+
+# ======================
+# Temporary files
+# ======================
+tmp/
+temp/
+*.tmp
+*.swp

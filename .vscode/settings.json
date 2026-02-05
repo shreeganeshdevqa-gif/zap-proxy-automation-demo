@@ -1,0 +1,8 @@
+{
+  "cSpell.enabled": false,
+  "[gherkin]": {
+    "editor.quickSuggestions": {
+      "strings": false
+    }
+  }
+}
