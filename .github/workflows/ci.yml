@@ -24,7 +24,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # -------------------------
       # Install dependencies
@@ -60,7 +60,7 @@ jobs:
             zap-baseline.py \
               -t https://opensource-demo.orangehrmlive.com \
               -r zap-passive-report.html
-              -I
+              -m 3
 
       # -------------------------
       # ZAP Spider + Active Scan
