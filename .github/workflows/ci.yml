@@ -10,17 +10,6 @@ jobs:
   zap-cypress:
     runs-on: ubuntu-latest
 
-    services:
-      zap:
-        image: ghcr.io/zaproxy/zaproxy:stable
-        ports:
-          - 8080:8080
-        options: >
-          --health-cmd "curl -s http://localhost:8080 || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +29,32 @@ jobs:
           mkdir -p cypress/cucumber-json
 
       # ===============================
-      # ZAP SPIDER SCAN
+      # START ZAP (NO SERVICE CONTAINER)
+      # ===============================
+      - name: Start OWASP ZAP
+        run: |
+          docker run -d --name zap \
+            -p 8080:8080 \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -daemon -host 0.0.0.0 -port 8080 \
+            -config api.disablekey=true
+
+      - name: Wait for ZAP to be ready
+        run: |
+          echo "Waiting for ZAP..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080 > /dev/null; then
+              echo "ZAP is ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ZAP failed to start"
+          docker logs zap
+          exit 1
+
+      # ===============================
+      # ZAP SPIDER
       # ===============================
       - name: ZAP Spider Scan
         run: |
@@ -60,7 +74,7 @@ jobs:
             -quickout reports/zap/zap-active.html
 
       # ===============================
-      # CYPRESS TESTS (PASSIVE SCAN)
+      # CYPRESS (PASSIVE SCAN)
       # ===============================
       - name: Run Cypress via ZAP Proxy
         env:
@@ -72,9 +86,9 @@ jobs:
           npx cypress run --browser chrome
 
       # ===============================
-      # ZAP PASSIVE SCAN REPORT
+      # ZAP PASSIVE REPORT
       # ===============================
-      - name: Generate ZAP Passive Scan Report
+      - name: ZAP Passive Scan Report
         run: |
           docker exec zap zap.sh -cmd \
             -quickurl https://opensource-demo.orangehrmlive.com \
@@ -84,7 +98,8 @@ jobs:
       # CUCUMBER HTML REPORT
       # ===============================
       - name: Generate Cucumber HTML Report
-        run: node scripts/cucumber-report.js
+        run: |
+          node scripts/cucumber-report.js
 
       # ===============================
       # UPLOAD ARTIFACTS
@@ -92,7 +107,7 @@ jobs:
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-and-cypress-reports
+          name: zap-cypress-reports
           path: |
             reports
             cypress/screenshots
