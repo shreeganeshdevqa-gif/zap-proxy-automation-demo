@@ -26,6 +26,15 @@ module.exports = defineConfig({
     screenshotsFolder: "cypress/screenshots",
     screenshotOnRunFailure: true,
     video: false,
+    env: {
+  cucumber: {
+    json: {
+      enabled: true,
+      output: "reports/cucumber/cucumber.json"
+    }
+  }
+},
+
 
     async setupNodeEvents(on, config) {
       await addCucumberPreprocessorPlugin(on, config);

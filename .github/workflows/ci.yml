@@ -28,22 +28,47 @@ jobs:
         run: npx cypress run --browser chrome
 
       # ------------------------
-      # Prepare reports directory
+      # Generate Cucumber HTML Report
       # ------------------------
-      - name: Prepare reports folder
+      - name: Generate Cucumber HTML Report
         run: |
-          mkdir -p reports
+          mkdir -p reports/cucumber
+          npx multiple-cucumber-html-reporter \
+            --jsonDir reports/cucumber \
+            --reportPath reports/cucumber/html \
+            --reportName "Cypress Cucumber Report"
+
+      # ------------------------
+      # Prepare ZAP reports folder
+      # ------------------------
+      - name: Prepare ZAP reports folder
+        run: |
+          mkdir -p reports/zap
           chmod -R 777 reports
 
       # ------------------------
-      # ZAP Baseline Scan (SAFE + CI FRIENDLY)
+      # ZAP Spider Scan
+      # ------------------------
+      - name: ZAP Spider Scan
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            --user root \
+            -v $(pwd)/reports/zap:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-spider.py \
+            -t https://opensource-demo.orangehrmlive.com \
+            -r zap-spider-report.html
+
+      # ------------------------
+      # ZAP Passive Scan
       # ------------------------
       - name: ZAP Passive Scan
         continue-on-error: true
         run: |
           docker run --rm \
             --user root \
-            -v $(pwd)/reports:/zap/wrk \
+            -v $(pwd)/reports/zap:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t https://opensource-demo.orangehrmlive.com \
@@ -51,13 +76,34 @@ jobs:
             -I
 
       # ------------------------
-      # Upload reports
+      # ZAP Active Scan
       # ------------------------
-      - name: Upload ZAP Report
+      - name: ZAP Active Scan
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            --user root \
+            -v $(pwd)/reports/zap:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t https://opensource-demo.orangehrmlive.com \
+            -r zap-active-report.html \
+            -I
+
+      # ------------------------
+      # Upload All Reports
+      # ------------------------
+      - name: Upload Security Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: reports/zap-passive-report.html
+          name: zap-security-reports
+          path: reports/zap
+
+      - name: Upload Cucumber Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-html-report
+          path: reports/cucumber/html
 
       - name: Upload Cypress Artifacts
         uses: actions/upload-artifact@v4
