@@ -13,7 +13,7 @@ jobs:
 
     steps:
       # -------------------------
-      # Checkout repository
+      # Checkout code
       # -------------------------
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
         run: npm ci
 
       # -------------------------
-      # Run Cypress tests (Chrome)
+      # Run Cypress tests
       # -------------------------
       - name: Run Cypress Tests (Chrome)
         env:
@@ -41,17 +41,20 @@ jobs:
         run: npx cypress run --browser chrome
 
       # -------------------------
-      # Create reports directory
+      # Prepare reports directory
       # -------------------------
       - name: Prepare reports directory
-        run: mkdir -p reports
+        run: |
+          mkdir -p reports
+          chmod -R 777 reports
 
       # -------------------------
-      # ZAP Passive Scan (Baseline)
+      # ZAP Passive Scan
       # -------------------------
       - name: ZAP Passive Scan (Baseline)
         run: |
           docker run --rm \
+            -u root \
             -v ${{ github.workspace }}/reports:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
@@ -64,6 +67,7 @@ jobs:
       - name: ZAP Spider + Active Scan
         run: |
           docker run --rm \
+            -u root \
             -v ${{ github.workspace }}/reports:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
@@ -71,12 +75,12 @@ jobs:
               -r zap-active-report.html
 
       # -------------------------
-      # Upload reports as artifacts
+      # Upload reports
       # -------------------------
-      - name: Upload ZAP & Cypress Reports
+      - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
-          name: security-and-test-reports
+          name: zap-and-cypress-reports
           path: |
             reports
             cypress/screenshots
