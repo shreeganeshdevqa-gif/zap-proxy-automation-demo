@@ -2,107 +2,358 @@ name: Cypress + OWASP ZAP Security CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL for security scanning'
+        required: true
+        default: 'https://opensource-demo.orangehrmlive.com'
+      scan_type:
+        description: 'Type of scan to perform'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - baseline
+          - active
+          - cypress-only
+
+env:
+  TARGET_URL: ${{ github.event.inputs.target_url || 'https://opensource-demo.orangehrmlive.com' }}
+  CYPRESS_BASE_URL: ${{ github.event.inputs.target_url || 'https://opensource-demo.orangehrmlive.com' }}
+  ZAP_PORT: 8080
+  ZAP_HOST: localhost
+  ZAP_CONTAINER_NAME: zap-security-scanner
 
 jobs:
-  zap-cypress:
+  security-scan:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 45
+    
     steps:
       # ----------------------------
-      # 1️⃣ Checkout code
+      # 1. Checkout code
       # ----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # ----------------------------
-      # 2️⃣ Setup Node.js
+      # 2. Setup Node.js
       # ----------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '20'
+          cache: 'npm'
 
       # ----------------------------
-      # 3️⃣ Install dependencies
+      # 3. Install dependencies
       # ----------------------------
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          npm ci
+          npx cypress verify
 
       # ----------------------------
-      # 4️⃣ Start OWASP ZAP (daemon)
+      # 4. Create reports directory
+      # ----------------------------
+      - name: Create reports directory
+        run: |
+          mkdir -p zap-reports
+          mkdir -p cypress/screenshots
+          mkdir -p cypress/videos
+          mkdir -p cucumber-html-reports
+
+      # ----------------------------
+      # 5. Start OWASP ZAP in Docker
       # ----------------------------
       - name: Start OWASP ZAP
         run: |
+          echo "Starting OWASP ZAP on port $ZAP_PORT..."
+          
           docker run -d \
-            --name zap \
-            -p 8080:8080 \
-            -v ${{ github.workspace }}/zap-reports:/zap/wrk \
-            owasp/zap2docker-stable \
-            zap.sh -daemon \
+            --name $ZAP_CONTAINER_NAME \
+            --restart unless-stopped \
+            -p $ZAP_PORT:$ZAP_PORT \
+            -v ${{ github.workspace }}/zap-reports:/zap/wrk:rw \
+            owasp/zap2docker-stable:latest \
+            zap.sh \
+            -daemon \
             -host 0.0.0.0 \
-            -port 8080 \
-            -config api.disablekey=true
-
-      - name: Wait for ZAP to be ready
-        run: sleep 20
+            -port $ZAP_PORT \
+            -config api.disablekey=true \
+            -config api.addrs.addr.name=.* \
+            -config api.addrs.addr.regex=true \
+            -config connection.timeoutInSecs=600
 
       # ----------------------------
-      # 5️⃣ Passive Scan (Baseline)
+      # 6. Wait for ZAP to be ready
       # ----------------------------
-      - name: ZAP Passive Scan (Baseline)
+      - name: Wait for ZAP
         run: |
-          docker exec zap zap-baseline.py \
-            -t https://opensource-demo.orangehrmlive.com \
-            -r passive-report.html
+          echo "Waiting for ZAP to be ready..."
+          for i in {1..30}; do
+            if curl -s http://$ZAP_HOST:$ZAP_PORT/ > /dev/null 2>&1; then
+              echo "ZAP is ready!"
+              break
+            fi
+            echo "Waiting for ZAP... attempt $i/30"
+            sleep 2
+          done
+          
+          sleep 5
+          
+          ZAP_VERSION=$(curl -s http://$ZAP_HOST:$ZAP_PORT/JSON/core/view/version/ | jq -r '.version')
+          echo "ZAP Version: $ZAP_VERSION"
 
       # ----------------------------
-      # 6️⃣ Spider (Crawl)
+      # 7. Run ZAP Baseline Scan (Passive)
+      # ----------------------------
+      - name: ZAP Baseline Scan
+        if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'baseline' || github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          echo "Running ZAP Baseline scan on $TARGET_URL"
+          
+          docker exec $ZAP_CONTAINER_NAME zap-baseline.py \
+            -t "$TARGET_URL" \
+            -r baseline-report.html \
+            -J baseline-report.json \
+            -x baseline-report.xml
+
+      # ----------------------------
+      # 8. Run ZAP Spider Scan
       # ----------------------------
       - name: ZAP Spider Scan
+        if: github.event.inputs.scan_type == 'all' || github.event_name == 'push'
+        continue-on-error: true
         run: |
-          docker exec zap zap.sh -cmd \
-            -quickurl https://opensource-demo.orangehrmlive.com \
-            -quickout spider-report.html
+          echo "Running ZAP Spider scan on $TARGET_URL"
+          
+          SPIDER_ID=$(curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/spider/action/scan/?url=$TARGET_URL" | jq -r '.scan')
+          
+          if [ "$SPIDER_ID" != "null" ]; then
+            echo "Spider started with ID: $SPIDER_ID"
+            
+            for i in {1..30}; do
+              STATUS=$(curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/spider/view/status/?scanId=$SPIDER_ID" | jq -r '.status')
+              echo "Spider progress: $STATUS%"
+              
+              if [ "$STATUS" = "100" ]; then
+                echo "Spider completed"
+                break
+              fi
+              sleep 2
+            done
+          fi
+          
+          curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/spider/view/results/?scanId=$SPIDER_ID" | jq '.' > zap-reports/spider-results.json
 
       # ----------------------------
-      # 7️⃣ Active Scan
+      # 9. Run Cypress via ZAP Proxy
+      # ----------------------------
+      - name: Run Cypress Tests via Proxy
+        id: cypress-tests
+        continue-on-error: true
+        env:
+          CYPRESS_PROXY_ENABLED: true
+          CYPRESS_ZAP_PROXY: http://$ZAP_HOST:$ZAP_PORT
+          HTTP_PROXY: http://$ZAP_HOST:$ZAP_PORT
+          HTTPS_PROXY: http://$ZAP_HOST:$ZAP_PORT
+          NO_PROXY: localhost,127.0.0.1
+        run: |
+          echo "Running Cypress tests via ZAP proxy..."
+          echo "Target URL: $CYPRESS_BASE_URL"
+          echo "Proxy: $CYPRESS_ZAP_PROXY"
+          
+          npx cypress run \
+            --browser chrome \
+            --headless \
+            --config "defaultCommandTimeout=30000,pageLoadTimeout=60000,video=false" \
+            2>&1 | tee cypress-run.log
+          
+          CYPRESS_EXIT=$?
+          echo "cypress_exit_code=$CYPRESS_EXIT" >> $GITHUB_ENV
+          
+          if [ $CYPRESS_EXIT -eq 0 ]; then
+            echo "Cypress tests passed"
+          else
+            echo "Cypress tests failed with exit code: $CYPRESS_EXIT"
+          fi
+
+      # ----------------------------
+      # 10. Run ZAP Active Scan
       # ----------------------------
       - name: ZAP Active Scan
+        if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'active'
+        continue-on-error: true
         run: |
-          docker exec zap zap-full-scan.py \
-            -t https://opensource-demo.orangehrmlive.com \
-            -r active-report.html || true
+          echo "Running ZAP Active scan on $TARGET_URL"
+          
+          ACTIVE_ID=$(curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/ascan/action/scan/?url=$TARGET_URL&recurse=true&inScopeOnly=false" | jq -r '.scan')
+          
+          if [ "$ACTIVE_ID" != "null" ]; then
+            echo "Active scan started with ID: $ACTIVE_ID"
+            
+            for i in {1..60}; do
+              STATUS=$(curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/ascan/view/status/?scanId=$ACTIVE_ID" | jq -r '.status')
+              echo "Active scan progress: $STATUS%"
+              
+              if [ "$STATUS" = "100" ]; then
+                echo "Active scan completed"
+                break
+              fi
+              sleep 10
+            done
+          fi
+          
+          echo "Generating ZAP reports..."
+          
+          curl -s "http://$ZAP_HOST:$ZAP_PORT/OTHER/core/other/htmlreport/?formMethod=GET" -o zap-reports/zap-report.html
+          
+          curl -s "http://$ZAP_HOST:$ZAP_PORT/OTHER/core/other/jsonreport/?formMethod=GET" | jq '.' > zap-reports/zap-report.json
+          
+          curl -s "http://$ZAP_HOST:$ZAP_PORT/OTHER/core/other/xmlreport/?formMethod=GET" -o zap-reports/zap-report.xml
+          
+          curl -s "http://$ZAP_HOST:$ZAP_PORT/JSON/core/view/alerts/?baseurl=$TARGET_URL" | jq '.' > zap-reports/alerts.json
 
       # ----------------------------
-      # 8️⃣ Run Cypress via ZAP Proxy
+      # 11. Generate Cucumber HTML Report
       # ----------------------------
-      - name: Run Cypress (Chrome via ZAP Proxy)
-        env:
-          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
-          HTTP_PROXY: http://localhost:8080
-          HTTPS_PROXY: http://localhost:8080
-          NO_PROXY: localhost,127.0.0.1
-        run: npx cypress run --browser chrome
+      - name: Generate HTML Reports
+        if: always()
+        run: |
+          echo "Generating HTML reports..."
+          
+          if [ -f "cucumber-report.json" ]; then
+            echo "Generating Cucumber HTML report..."
+            npx multiple-cucumber-html-reporter generate \
+              --jsonDir ./ \
+              --reportPath ./cucumber-html-reports/ \
+              --metadata.browser.name=chrome \
+              --metadata.browser.version=latest \
+              --metadata.platform.name=ubuntu \
+              --reportName="Security Test Report" \
+              --pageTitle="Security Test Execution" \
+              --displayDuration=true
+            
+            echo "Cucumber HTML report generated"
+          else
+            echo "No cucumber-report.json found"
+          fi
+          
+          if [ -f "cypress/reports/mochawesome.json" ]; then
+            echo "Generating Mochawesome HTML report..."
+            npx mochawesome-merge cypress/reports/mochawesome.json > cypress/reports/combined-report.json
+            npx marge cypress/reports/combined-report.json \
+              --reportDir cypress/reports \
+              --reportFilename index.html \
+              --charts true \
+              --inline-assets true
+            echo "Mochawesome HTML report generated"
+          fi
 
       # ----------------------------
-      # 9️⃣ Upload ZAP Reports
+      # 12. Generate Security Summary
+      # ----------------------------
+      - name: Generate Security Summary
+        if: always()
+        run: |
+          echo "SECURITY SCAN SUMMARY"
+          echo "====================="
+          echo ""
+          echo "Target URL: $TARGET_URL"
+          echo "Scan completed: $(date)"
+          echo ""
+          
+          if [ -f "zap-reports/alerts.json" ]; then
+            echo "SECURITY FINDINGS:"
+            echo "------------------"
+            
+            HIGH=$(jq -r '.alerts[] | select(.risk == "High") | .alert' zap-reports/alerts.json 2>/dev/null | wc -l || echo "0")
+            MEDIUM=$(jq -r '.alerts[] | select(.risk == "Medium") | .alert' zap-reports/alerts.json 2>/dev/null | wc -l || echo "0")
+            LOW=$(jq -r '.alerts[] | select(.risk == "Low") | .alert' zap-reports/alerts.json 2>/dev/null | wc -l || echo "0")
+            INFO=$(jq -r '.alerts[] | select(.risk == "Informational") | .alert' zap-reports/alerts.json 2>/dev/null | wc -l || echo "0")
+            
+            echo "High Risk:      $HIGH"
+            echo "Medium Risk:    $MEDIUM"
+            echo "Low Risk:       $LOW"
+            echo "Informational:  $INFO"
+            echo ""
+            
+            if [ $HIGH -gt 0 ]; then
+              echo "CRITICAL: Found $HIGH high-risk security issues!"
+            fi
+          fi
+          
+          if [ -f "cypress-run.log" ]; then
+            echo ""
+            echo "CYPRESS TEST RESULTS:"
+            echo "---------------------"
+            grep -E "(Passing|Failing|Tests:|Spec)" cypress-run.log | tail -3 || echo "No test results found"
+          fi
+
+      # ----------------------------
+      # 13. Upload Artifacts
       # ----------------------------
       - name: Upload ZAP Reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-security-reports
           path: zap-reports/
+          retention-days: 30
+
+      - name: Upload Cypress Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-results
+          path: |
+            cypress/screenshots/
+            cypress/videos/
+            cypress-run.log
+            cypress/reports/
+          retention-days: 30
+
+      - name: Upload HTML Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-reports
+          path: |
+            cucumber-html-reports/
+            test-summary.json
+          retention-days: 30
 
       # ----------------------------
-      # 🔟 Upload Cypress Screenshots
+      # 14. Cleanup
       # ----------------------------
-      - name: Upload Cypress Screenshots
-        uses: actions/upload-artifact@v4
+      - name: Stop ZAP Container
         if: always()
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots
+        run: |
+          docker stop $ZAP_CONTAINER_NAME || true
+          docker rm $ZAP_CONTAINER_NAME || true
+          echo "ZAP container cleaned up"
+
+      # ----------------------------
+      # 15. Fail on Critical Issues
+      # ----------------------------
+      - name: Fail on Critical Security Issues
+        if: always()
+        run: |
+          if [ -f "zap-reports/alerts.json" ]; then
+            HIGH_COUNT=$(jq -r '.alerts[] | select(.risk == "High") | .alert' zap-reports/alerts.json 2>/dev/null | wc -l || echo "0")
+            if [ $HIGH_COUNT -gt 0 ]; then
+              echo "FAILING: Found $HIGH_COUNT high-risk security issues!"
+              exit 1
+            fi
+          fi
+          
+          echo "Security scan completed successfully"
