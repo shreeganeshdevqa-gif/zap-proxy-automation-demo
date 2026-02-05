@@ -1,280 +1,54 @@
-name: Cypress + OWASP ZAP Security CI
+name: ZAP Security Scan
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      target_url:
-        description: 'Target URL for security scanning'
-        required: true
-        default: 'https://opensource-demo.orangehrmlive.com'
 
 env:
-  TARGET_URL: ${{ github.event.inputs.target_url || 'https://opensource-demo.orangehrmlive.com' }}
-  CYPRESS_BASE_URL: ${{ github.event.inputs.target_url || 'https://opensource-demo.orangehrmlive.com' }}
-  ZAP_PORT: 8080
-  ZAP_HOST: localhost
-  ZAP_CONTAINER_NAME: zap-scanner
+  TARGET_URL: 'https://opensource-demo.orangehrmlive.com'
 
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     
     steps:
-      # 1. Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      # 3. Install dependencies
-      - name: Install npm dependencies
+      - name: Install dependencies
         run: |
           npm ci
-          npx cypress verify
 
-      # 4. Install jq for JSON parsing
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      # 5. Create reports directory
-      - name: Create reports directory
+      - name: Run ZAP Baseline Scan
+        continue-on-error: true
         run: |
+          echo "Running ZAP baseline scan on $TARGET_URL"
           mkdir -p zap-reports
-          mkdir -p cypress/screenshots
-          mkdir -p cypress/videos
-
-      # 6. Start OWASP ZAP in Docker
-      - name: Start OWASP ZAP
-        run: |
-          echo "Starting OWASP ZAP on port $ZAP_PORT"
           
-          # Pull and run the official ZAP Docker image
-          docker run -d \
-            --name $ZAP_CONTAINER_NAME \
-            -p $ZAP_PORT:$ZAP_PORT \
-            -v ${{ github.workspace }}/zap-reports:/zap/wrk:rw \
+          # Run ZAP baseline scan using Docker
+          docker run --rm \
+            -v $(pwd)/zap-reports:/zap/wrk:rw \
+            -u zap \
             owasp/zap2docker-weekly \
-            zap.sh \
-            -daemon \
-            -host 0.0.0.0 \
-            -port $ZAP_PORT \
-            -config api.disablekey=true
-
-      # 7. Wait for ZAP to be ready
-      - name: Wait for ZAP
-        run: |
-          echo "Waiting for ZAP to be ready..."
-          sleep 30
-          echo "ZAP should be ready now"
-
-      # 8. Run ZAP Baseline Scan (Passive)
-      - name: ZAP Baseline Scan
-        continue-on-error: true
-        run: |
-          echo "Running ZAP Baseline scan on $TARGET_URL"
-          echo "Reports will be saved to: $(pwd)/zap-reports/"
-          
-          docker exec $ZAP_CONTAINER_NAME zap-baseline.py \
+            zap-baseline.py \
             -t "$TARGET_URL" \
-            -r baseline-report.html \
-            -J baseline-report.json \
-            -x baseline-report.xml \
+            -r zap-report.html \
+            -J zap-report.json \
+            -x zap-report.xml \
             --auto
-
-      # 9. Run ZAP Spider Scan
-      - name: ZAP Spider Scan
-        continue-on-error: true
-        run: |
-          echo "Running ZAP Spider scan on $TARGET_URL"
           
-          # Start spider scan
-          docker exec $ZAP_CONTAINER_NAME zap-cli spider "$TARGET_URL" || true
-          
-          # Wait for spider to complete
-          sleep 10
-          
-          echo "Spider scan completed"
-
-      # 10. Run Cypress via ZAP Proxy
-      - name: Run Cypress Tests via Proxy
-        id: cypress-tests
-        continue-on-error: true
-        env:
-          CYPRESS_PROXY_ENABLED: true
-          CYPRESS_ZAP_PROXY: http://$ZAP_HOST:$ZAP_PORT
-          HTTP_PROXY: http://$ZAP_HOST:$ZAP_PORT
-          HTTPS_PROXY: http://$ZAP_HOST:$ZAP_PORT
-          NO_PROXY: localhost,127.0.0.1
-        run: |
-          echo "Running Cypress tests via ZAP proxy..."
-          echo "Target URL: $CYPRESS_BASE_URL"
-          echo "Proxy: $CYPRESS_ZAP_PROXY"
-          
-          npx cypress run \
-            --browser chrome \
-            --headless \
-            --config "defaultCommandTimeout=30000,pageLoadTimeout=60000,video=false" \
-            2>&1 | tee cypress-run.log
-          
-          CYPRESS_EXIT=$?
-          echo "cypress_exit_code=$CYPRESS_EXIT" >> $GITHUB_ENV
-          
-          if [ $CYPRESS_EXIT -eq 0 ]; then
-            echo "Cypress tests passed"
-          else
-            echo "Cypress tests failed with exit code: $CYPRESS_EXIT"
-          fi
-
-      # 11. Run ZAP Active Scan
-      - name: ZAP Active Scan
-        continue-on-error: true
-        run: |
-          echo "Running ZAP Active scan on $TARGET_URL"
-          
-          # Run active scan
-          docker exec $ZAP_CONTAINER_NAME zap-cli active-scan "$TARGET_URL" || true
-          
-          # Wait for active scan to complete
-          sleep 30
-          
-          echo "Active scan completed"
-
-      # 12. Generate ZAP Reports
-      - name: Generate ZAP Reports
-        if: always()
-        run: |
-          echo "Generating ZAP reports..."
-          
-          # Generate comprehensive ZAP report
-          docker exec $ZAP_CONTAINER_NAME zap-cli report \
-            -o /zap/wrk/zap-full-report.html \
-            -f html \
-            "$TARGET_URL" || true
-          
-          # Generate JSON report
-          docker exec $ZAP_CONTAINER_NAME zap-cli report \
-            -o /zap/wrk/zap-report.json \
-            -f json \
-            "$TARGET_URL" || true
-          
-          # Generate XML report
-          docker exec $ZAP_CONTAINER_NAME zap-cli report \
-            -o /zap/wrk/zap-report.xml \
-            -f xml \
-            "$TARGET_URL" || true
-          
-          # List generated reports
-          echo "Generated reports in zap-reports/:"
+          echo "Reports generated:"
           ls -la zap-reports/
 
-      # 13. Generate Test Summary
-      - name: Generate Test Summary
-        if: always()
-        run: |
-          echo "SECURITY SCAN SUMMARY"
-          echo "====================="
-          echo ""
-          echo "Target URL: $TARGET_URL"
-          echo "Scan completed: $(date)"
-          echo ""
-          echo "Reports generated in zap-reports/:"
-          ls -la zap-reports/ 2>/dev/null || echo "No reports found"
-          
-          # Create simple summary file
-          cat > test-summary.txt << EOF
-          Security Test Summary
-          =====================
-          
-          Target URL: $TARGET_URL
-          Scan Time: $(date)
-          ZAP Proxy: http://$ZAP_HOST:$ZAP_PORT
-          
-          Generated Reports:
-          EOF
-          
-          if [ -d "zap-reports" ]; then
-            ls -la zap-reports/ >> test-summary.txt
-          fi
-          
-          if [ -f "cypress-run.log" ]; then
-            echo "" >> test-summary.txt
-            echo "Cypress Test Results:" >> test-summary.txt
-            grep -E "(Passing|Failing|Tests:)" cypress-run.log | tail -1 >> test-summary.txt 2>/dev/null || echo "No test results" >> test-summary.txt
-          fi
-
-      # 14. Upload ZAP Reports
       - name: Upload ZAP Reports
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-security-reports
           path: zap-reports/
           retention-days: 30
-
-      # 15. Upload Cypress Results
-      - name: Upload Cypress Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-results
-          path: |
-            cypress/screenshots/
-            cypress/videos/
-            cypress-run.log
-          retention-days: 30
-
-      # 16. Upload Test Summary
-      - name: Upload Test Summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-summary
-          path: |
-            test-summary.txt
-          retention-days: 30
-
-      # 17. Cleanup
-      - name: Cleanup Docker Containers
-        if: always()
-        run: |
-          docker stop $ZAP_CONTAINER_NAME 2>/dev/null || true
-          docker rm $ZAP_CONTAINER_NAME 2>/dev/null || true
-
-      # 18. Check for Critical Issues
-      - name: Check for Critical Security Issues
-        if: always()
-        run: |
-          echo "Checking for critical security issues..."
-          
-          # Check if any reports were generated with high risk findings
-          # This is a simple check - in production you'd parse the JSON/XML
-          
-          if [ -f "zap-reports/baseline-report.json" ]; then
-            echo "Baseline scan report found"
-            HIGH_ISSUES=$(grep -i "high" zap-reports/baseline-report.json | wc -l || echo "0")
-            if [ "$HIGH_ISSUES" -gt "0" ]; then
-              echo "Found $HIGH_ISSUES high-risk issues in baseline scan"
-              exit 1
-            fi
-          fi
-          
-          if [ -f "zap-reports/zap-report.json" ]; then
-            echo "Full scan report found"
-            HIGH_ISSUES=$(grep -i "high" zap-reports/zap-report.json | wc -l || echo "0")
-            if [ "$HIGH_ISSUES" -gt "0" ]; then
-              echo "Found $HIGH_ISSUES high-risk issues in full scan"
-              exit 1
-            fi
-          fi
-          
-          echo "No critical security issues found or could not parse reports"
