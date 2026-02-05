@@ -1,38 +1,86 @@
-name: Cypress CI (Chrome & Firefox)
+name: Cypress + ZAP Full Security Scan
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  cypress-tests:
+  security-tests:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    services:
+      zap:
+        image: owasp/zap2docker-stable
+        ports:
+          - 8080:8080
+        options: >
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        command: >
+          zap.sh -daemon
+          -host 0.0.0.0
+          -port 8080
+          -config api.disablekey=true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+    env:
+      CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
+      HTTP_PROXY: http://localhost:8080
+      HTTPS_PROXY: http://localhost:8080
+      NO_PROXY: localhost,127.0.0.1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Run Cypress - Chrome (no proxy)
+      - name: Wait for ZAP
+        run: sleep 20
+
+      - name: Run Cypress tests (Passive Scan)
         run: npx cypress run --browser chrome
 
-      - name: Run Cypress - Firefox (no proxy)
-        run: npx cypress run --browser firefox
+      # ------------------ SPIDER ------------------
+      - name: Run ZAP Spider
+        run: |
+          docker exec $(docker ps -q --filter ancestor=owasp/zap2docker-stable) \
+          zap-cli spider https://opensource-demo.orangehrmlive.com
 
-      - name: Run Cypress - Firefox (with proxy)
-        env:
-          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
-          HTTP_PROXY: http://localhost:8080
-          HTTPS_PROXY: http://localhost:8080
-          NO_PROXY: localhost,127.0.0.1
-        run: npm run test:firefox:proxy
+      # ------------------ ACTIVE SCAN ------------------
+      - name: Run ZAP Active Scan
+        run: |
+          docker exec $(docker ps -q --filter ancestor=owasp/zap2docker-stable) \
+          zap-cli active-scan https://opensource-demo.orangehrmlive.com
+
+      # ------------------ REPORTS ------------------
+      - name: Generate Passive Scan Report
+        run: |
+          docker exec $(docker ps -q --filter ancestor=owasp/zap2docker-stable) \
+          zap-cli report -o zap-passive-report.html -f html
+
+      - name: Generate Active Scan Report
+        run: |
+          docker exec $(docker ps -q --filter ancestor=owasp/zap2docker-stable) \
+          zap-cli report -o zap-active-report.html -f html
+
+      - name: Generate Full ZAP Report
+        run: |
+          docker exec $(docker ps -q --filter ancestor=owasp/zap2docker-stable) \
+          zap-cli report -o zap-full-report.html -f html
+
+      # ------------------ UPLOAD ------------------
+      - name: Upload ZAP Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-security-reports
+          path: |
+            zap-passive-report.html
+            zap-active-report.html
+            zap-full-report.html
