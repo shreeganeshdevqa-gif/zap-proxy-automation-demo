@@ -31,11 +31,11 @@ jobs:
           echo "Running ZAP baseline scan on $TARGET_URL"
           mkdir -p zap-reports
           
-          # Run ZAP baseline scan using Docker
+          # Run ZAP baseline scan using Docker (using stable version)
           docker run --rm \
             -v $(pwd)/zap-reports:/zap/wrk:rw \
             -u zap \
-            owasp/zap2docker-weekly \
+            owasp/zap2docker-stable:latest \
             zap-baseline.py \
             -t "$TARGET_URL" \
             -r zap-report.html \
