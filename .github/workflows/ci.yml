@@ -1,54 +1,114 @@
-name: ZAP Security Scan
+name: Cypress + OWASP ZAP Security CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
-env:
-  TARGET_URL: 'https://opensource-demo.orangehrmlive.com'
-
 jobs:
-  security-scan:
+  zap-cypress:
     runs-on: ubuntu-latest
-    
+
     steps:
+      # ----------------------------
+      # 1️⃣ Checkout repository
+      # ----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ----------------------------
+      # 2️⃣ Setup Node.js
+      # ----------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 18
 
-      - name: Install dependencies
+      # ----------------------------
+      # 3️⃣ Install dependencies
+      # ----------------------------
+      - name: Install npm dependencies
+        run: npm install
+
+      # ----------------------------
+      # 4️⃣ Create ZAP reports folder
+      # ----------------------------
+      - name: Create ZAP reports folder
+        run: mkdir -p zap-reports
+
+      # ----------------------------
+      # 5️⃣ Start OWASP ZAP (daemon)
+      # ----------------------------
+      - name: Start OWASP ZAP
         run: |
-          npm ci
+          docker run -d \
+            --name zap \
+            -p 8080:8080 \
+            -v ${{ github.workspace }}/zap-reports:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -daemon \
+            -host 0.0.0.0 \
+            -port 8080 \
+            -config api.disablekey=true
 
-      - name: Run ZAP Baseline Scan
-        continue-on-error: true
+      - name: Wait for ZAP to be ready
+        run: sleep 25
+
+      # ----------------------------
+      # 6️⃣ Passive Scan (Baseline)
+      # ----------------------------
+      - name: ZAP Passive Scan
         run: |
-          echo "Running ZAP baseline scan on $TARGET_URL"
-          mkdir -p zap-reports
-          
-          # Run ZAP baseline scan using Docker (using stable version)
-          docker run --rm \
-            -v $(pwd)/zap-reports:/zap/wrk:rw \
-            -u zap \
-            owasp/zap2docker-stable:latest \
-            zap-baseline.py \
-            -t "$TARGET_URL" \
-            -r zap-report.html \
-            -J zap-report.json \
-            -x zap-report.xml \
-            --auto
-          
-          echo "Reports generated:"
-          ls -la zap-reports/
+          docker exec zap zap-baseline.py \
+            -t https://opensource-demo.orangehrmlive.com \
+            -r passive-report.html || true
 
+      # ----------------------------
+      # 7️⃣ Spider Scan
+      # ----------------------------
+      - name: ZAP Spider Scan
+        run: |
+          docker exec zap zap.sh -cmd \
+            -quickurl https://opensource-demo.orangehrmlive.com \
+            -quickout spider-report.html || true
+
+      # ----------------------------
+      # 8️⃣ Active Scan
+      # ----------------------------
+      - name: ZAP Active Scan
+        run: |
+          docker exec zap zap-full-scan.py \
+            -t https://opensource-demo.orangehrmlive.com \
+            -r active-report.html || true
+
+      # ----------------------------
+      # 9️⃣ Run Cypress via ZAP Proxy
+      # ----------------------------
+      - name: Run Cypress via ZAP Proxy
+        env:
+          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
+          HTTP_PROXY: http://localhost:8080
+          HTTPS_PROXY: http://localhost:8080
+          NO_PROXY: localhost,127.0.0.1
+        run: npx cypress run --browser chrome
+
+      # ----------------------------
+      # 🔟 Upload ZAP Reports
+      # ----------------------------
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-security-reports
           path: zap-reports/
-          retention-days: 30
+
+      # ----------------------------
+      # 1️⃣1️⃣ Upload Cypress Screenshots
+      # ----------------------------
+      - name: Upload Cypress Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots
