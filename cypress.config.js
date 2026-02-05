@@ -9,21 +9,24 @@ const {
 
 require("dotenv").config();
 
+const BASE_URL =
+  process.env.CYPRESS_BASE_URL ||
+  "https://opensource-demo.orangehrmlive.com";
+
+console.log("✅ Cypress baseUrl:", BASE_URL);
+
 module.exports = defineConfig({
   e2e: {
-    // ✅ fallback added (CRITICAL)
-    baseUrl:
-      process.env.CYPRESS_BASE_URL ||
-      "https://opensource-demo.orangehrmlive.com",
+    baseUrl: BASE_URL,
 
     specPattern: "cypress/e2e/features/**/*.feature",
-    supportFile: "cypress/support/e2e.js",
+
+    chromeWebSecurity: false,
+    experimentalModifyObstructiveThirdPartyCode: true,
 
     async setupNodeEvents(on, config) {
-      // Cucumber plugin
       await addCucumberPreprocessorPlugin(on, config);
 
-      // Esbuild bundler
       on(
         "file:preprocessor",
         createBundler({
@@ -31,8 +34,8 @@ module.exports = defineConfig({
         })
       );
 
-      // 🔍 Debug proof (shows in CI logs)
-      console.log("✅ Cypress baseUrl:", config.baseUrl);
+      // ensure baseUrl is injected everywhere
+      config.baseUrl = BASE_URL;
 
       return config;
     },

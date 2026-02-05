@@ -5,7 +5,7 @@
   "scripts": {
     "test:chrome": "npx cypress run --browser chrome",
     "test:firefox": "cross-env CYPRESS_INTERNAL_BROWSER_CONNECT_TIMEOUT=60000 npx cypress run --browser firefox",
-    "test:firefox:proxy": "cross-env HTTP_PROXY=http://localhost:8080 HTTPS_PROXY=http://localhost:8080 NO_PROXY=localhost,127.0.0.1 npm run test:firefox -- --headed",
+    "test:firefox:proxy": "cross-env HTTP_PROXY=http://localhost:8080 HTTPS_PROXY=http://localhost:8080 NO_PROXY=localhost,127.0.0.1 npm run test:firefox --headless",
     "report": "node generate-report.js"
   },
   "devDependencies": {
