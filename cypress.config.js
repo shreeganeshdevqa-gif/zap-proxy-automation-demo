@@ -7,11 +7,7 @@ const {
   createEsbuildPlugin,
 } = require("@badeball/cypress-cucumber-preprocessor/esbuild");
 
-require("dotenv").config();
-
-const BASE_URL =
-  process.env.CYPRESS_BASE_URL ||
-  "https://opensource-demo.orangehrmlive.com";
+const BASE_URL = "https://opensource-demo.orangehrmlive.com";
 
 console.log("✅ Cypress baseUrl:", BASE_URL);
 
@@ -39,11 +35,12 @@ module.exports = defineConfig({
     },
   },
 
+  // ✅ THIS IS THE IMPORTANT FIX
   env: {
     cucumber: {
       json: {
         enabled: true,
-        output: "cypress/reports/json/cucumber-report.json",
+        output: "cypress/reports/json", // <-- DIRECTORY, NOT FILE
       },
     },
   },
