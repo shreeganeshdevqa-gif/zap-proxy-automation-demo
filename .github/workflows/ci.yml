@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
         run: npm install
@@ -28,7 +28,7 @@ jobs:
         run: npx cypress run --browser chrome
 
       # -----------------------------------------
-      # Create ZAP automation file - FIXED SYNTAX
+      # Create ZAP automation file
       # -----------------------------------------
       - name: Create ZAP automation config
         run: |
@@ -74,11 +74,15 @@ jobs:
 
       # -----------------------------------------
       # Run ZAP ONCE using Automation Framework
+      # FIX: Set correct permissions for ZAP to write reports
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
           # Create directory for reports
           mkdir -p zap-reports
+          
+          # Change ownership to allow ZAP to write (ZAP runs as user 1000)
+          sudo chown -R 1000:1000 zap-reports
           
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk \
