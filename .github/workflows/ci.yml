@@ -24,8 +24,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # -------------------- START ZAP --------------------
-      - name: Start OWASP ZAP (Daemon + API enabled)
+      # ---------------- START ZAP ----------------
+      - name: Start OWASP ZAP (Daemon)
         run: |
           docker run -d --name zap \
             -p 8080:8080 \
@@ -37,7 +37,7 @@ jobs:
             -config api.addrs.addr.name=.* \
             -config api.addrs.addr.regex=true
 
-      - name: Wait for ZAP to be ready
+      - name: Wait for ZAP
         run: |
           echo "Waiting for ZAP..."
           for i in {1..30}; do
@@ -47,50 +47,57 @@ jobs:
             fi
             sleep 5
           done
-          echo "ZAP failed to start"
           docker logs zap
           exit 1
 
-      # -------------------- CYPRESS THROUGH ZAP --------------------
-      - name: Run Cypress tests (through ZAP proxy)
+      # ---------------- CYPRESS ----------------
+      - name: Run Cypress through ZAP
         env:
-          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
           HTTP_PROXY: http://localhost:8080
           HTTPS_PROXY: http://localhost:8080
           NO_PROXY: localhost,127.0.0.1
+          CYPRESS_BASE_URL: https://opensource-demo.orangehrmlive.com
         run: |
           npx cypress run --browser chrome
 
-      # -------------------- ZAP SPIDER --------------------
-      - name: Run ZAP Spider Scan
+      # ---------------- SPIDER ----------------
+      - name: ZAP Spider Scan
         run: |
-          docker exec zap zap.sh -cmd \
-            -quickurl https://opensource-demo.orangehrmlive.com \
-            -quickout /zap/reports/zap-spider.html \
-            -quickprogress
+          curl "http://localhost:8080/JSON/spider/action/scan/?url=https://opensource-demo.orangehrmlive.com&maxChildren=0&recurse=true&subtreeOnly=false"
 
-      # -------------------- ZAP ACTIVE SCAN --------------------
-      - name: Run ZAP Active Scan
+          echo "Waiting for spider to complete..."
+          while true; do
+            STATUS=$(curl -s http://localhost:8080/JSON/spider/view/status/ | jq -r '.status')
+            echo "Spider progress: $STATUS%"
+            [ "$STATUS" = "100" ] && break
+            sleep 5
+          done
+
+      # ---------------- ACTIVE SCAN ----------------
+      - name: ZAP Active Scan
         run: |
-          docker exec zap zap.sh -cmd \
-            -quickurl https://opensource-demo.orangehrmlive.com \
-            -quickout /zap/reports/zap-active.html \
-            -quickprogress \
-            -quickscan
+          curl "http://localhost:8080/JSON/ascan/action/scan/?url=https://opensource-demo.orangehrmlive.com&recurse=true&inScopeOnly=false"
 
-      # -------------------- ZAP REPORTS --------------------
+          echo "Waiting for active scan to complete..."
+          while true; do
+            STATUS=$(curl -s http://localhost:8080/JSON/ascan/view/status/ | jq -r '.status')
+            echo "Active scan progress: $STATUS%"
+            [ "$STATUS" = "100" ] && break
+            sleep 10
+          done
+
+      # ---------------- REPORTS ----------------
       - name: Generate ZAP Reports
         run: |
           mkdir -p zap-reports
-          docker cp zap:/zap/reports ./zap-reports || true
-          docker exec zap zap.sh -cmd \
-            -reportgen \
-            -template traditional-html \
-            -report zap-full.html \
-            -out /zap/reports
-          docker cp zap:/zap/reports/zap-full.html ./zap-reports/zap-passive.html || true
 
-      # -------------------- CUCUMBER HTML REPORT --------------------
+          curl "http://localhost:8080/OTHER/core/other/htmlreport/" \
+            -o zap-reports/zap-report.html
+
+          curl "http://localhost:8080/OTHER/core/other/jsonreport/" \
+            -o zap-reports/zap-report.json
+
+      # ---------------- CUCUMBER REPORT ----------------
       - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
@@ -99,11 +106,11 @@ jobs:
             --reportPath reports/cucumber \
             --reportName "Cypress Cucumber Report"
 
-      # -------------------- UPLOAD ARTIFACTS --------------------
+      # ---------------- UPLOAD ARTIFACTS ----------------
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
-          name: security-and-test-reports
+          name: zap-cypress-reports
           path: |
             zap-reports
             reports/cucumber
