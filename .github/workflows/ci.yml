@@ -37,6 +37,16 @@ jobs:
         run: npx cypress run --browser chrome
 
       # -----------------------------------------
+      # Create report directories (CRITICAL FIX)
+      # -----------------------------------------
+      - name: Create report directories
+        run: |
+          mkdir -p security-and-test-reports/zap-spider
+          mkdir -p security-and-test-reports/zap-passive
+          mkdir -p security-and-test-reports/zap-active
+          mkdir -p security-and-test-reports/cucumber
+
+      # -----------------------------------------
       # Create ZAP Automation config
       # -----------------------------------------
       - name: Create ZAP automation config
@@ -54,7 +64,7 @@ jobs:
 
           jobs:
             # -----------------------------
-            # Spider scan
+            # Spider scan + report
             # -----------------------------
             - type: "spider"
               parameters:
@@ -69,7 +79,7 @@ jobs:
                 reportFile: "spider-report.html"
 
             # -----------------------------
-            # Passive scan
+            # Passive scan + report
             # -----------------------------
             - type: "passiveScan-wait"
               parameters:
@@ -82,7 +92,7 @@ jobs:
                 reportFile: "passive-report.html"
 
             # -----------------------------
-            # Active scan
+            # Active scan + report
             # -----------------------------
             - type: "activeScan"
               parameters:
@@ -97,7 +107,7 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Run ZAP (root to avoid permission issues)
+      # Run ZAP (root avoids permission issues)
       # -----------------------------------------
       - name: Run ZAP scans
         run: |
@@ -113,11 +123,10 @@ jobs:
       - name: Generate Cucumber HTML report
         run: |
           if [ ! -d "cypress/reports/json" ]; then
-            echo "Cucumber JSON not found. Ensure Cypress Cucumber JSON reporter is enabled."
+            echo "Cucumber JSON not found. Skipping Cucumber report."
             exit 0
           fi
 
-          mkdir -p security-and-test-reports/cucumber
           npm install --save-dev multiple-cucumber-html-reporter
 
           node <<'EOF'
@@ -133,7 +142,7 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Upload ALL reports (single artifact)
+      # Upload ALL reports
       # -----------------------------------------
       - name: Upload reports
         uses: actions/upload-artifact@v4
