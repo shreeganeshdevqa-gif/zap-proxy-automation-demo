@@ -21,50 +21,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # --------------------------------------------------
-      # Start ZAP (SINGLE INSTANCE)
-      # --------------------------------------------------
-      - name: Start ZAP daemon
-        run: |
-          docker run -d \
-            --name zap \
-            -p 8080:8080 \
-            -v ${{ github.workspace }}:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -daemon \
-            -host 0.0.0.0 \
-            -port 8080 \
-            -config api.disablekey=true \
-            -config api.addrs.addr.name=.* \
-            -config api.addrs.addr.regex=true
-
-      - name: Wait for ZAP
-        run: |
-          echo "Waiting for ZAP..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8080 >/dev/null; then
-              echo "ZAP is ready"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "ZAP did not start"
-          exit 1
-
-      # --------------------------------------------------
-      # Cypress → Passive Scan
-      # --------------------------------------------------
-      - name: Run Cypress tests through ZAP proxy
-        env:
-          HTTP_PROXY: http://localhost:8080
-          HTTPS_PROXY: http://localhost:8080
-          NO_PROXY: localhost,127.0.0.1
+      # -----------------------------------------
+      # Run Cypress first (normal run)
+      # -----------------------------------------
+      - name: Run Cypress tests
         run: npx cypress run --browser chrome
 
-      # --------------------------------------------------
-      # ZAP Automation file
-      # --------------------------------------------------
-      - name: Create ZAP automation file
+      # -----------------------------------------
+      # Create ZAP automation file
+      # -----------------------------------------
+      - name: Create ZAP automation config
         run: |
           cat <<'EOF' > zap-automation.yaml
           env:
@@ -107,16 +73,19 @@ jobs:
                 reportFile: zap-report.json
           EOF
 
-      # --------------------------------------------------
-      # Run automation INSIDE SAME INSTANCE
-      # --------------------------------------------------
+      # -----------------------------------------
+      # Run ZAP ONCE using Automation Framework
+      # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
-          docker exec zap zap.sh -autorun /zap/wrk/zap-automation.yaml
+          docker run --rm \
+            -v ${{ github.workspace }}:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -autorun /zap/wrk/zap-automation.yaml
 
-      # --------------------------------------------------
-      # Cucumber HTML report
-      # --------------------------------------------------
+      # -----------------------------------------
+      # Generate Cucumber HTML report
+      # -----------------------------------------
       - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
@@ -125,9 +94,9 @@ jobs:
             --reportPath reports/cucumber \
             --reportName "Cypress Cucumber Report"
 
-      # --------------------------------------------------
-      # Upload artifacts
-      # --------------------------------------------------
+      # -----------------------------------------
+      # Upload reports
+      # -----------------------------------------
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
