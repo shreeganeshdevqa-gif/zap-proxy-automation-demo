@@ -18,25 +18,14 @@ console.log("✅ Cypress baseUrl:", BASE_URL);
 module.exports = defineConfig({
   e2e: {
     baseUrl: BASE_URL,
-
     specPattern: "cypress/e2e/features/**/*.feature",
 
-    chromeWebSecurity: false,
-    experimentalModifyObstructiveThirdPartyCode: true,
     screenshotsFolder: "cypress/screenshots",
     screenshotOnRunFailure: true,
     video: false,
-    env: {
-  cucumberJson: {
-    generate: true,
-    outputFolder: "cypress/cucumber-json",
-    filePrefix: "",
-  },
-},
-
-
 
     async setupNodeEvents(on, config) {
+      // ✅ REQUIRED for Cucumber
       await addCucumberPreprocessorPlugin(on, config);
 
       on(
@@ -46,10 +35,16 @@ module.exports = defineConfig({
         })
       );
 
-      // ensure baseUrl is injected everywhere
-      config.baseUrl = BASE_URL;
-
       return config;
+    },
+  },
+
+  env: {
+    cucumber: {
+      json: {
+        enabled: true,
+        output: "cypress/reports/json/cucumber-report.json",
+      },
     },
   },
 });
