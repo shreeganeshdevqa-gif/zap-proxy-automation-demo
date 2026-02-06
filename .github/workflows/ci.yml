@@ -11,7 +11,7 @@ jobs:
 
     steps:
       # -----------------------------------------
-      # Checkout code
+      # Checkout repository
       # -----------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -82,7 +82,7 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Run ZAP (FIXED: run as root)
+      # Run ZAP (run as root to fix permissions)
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
@@ -93,9 +93,9 @@ jobs:
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
-      # Move ZAP reports
+      # Collect ZAP reports
       # -----------------------------------------
-      - name: Move ZAP reports to directory
+      - name: Collect ZAP reports
         run: |
           mkdir -p zap-reports
 
@@ -109,16 +109,29 @@ jobs:
 
       # -----------------------------------------
       # Generate Cucumber HTML report
+      # (NO .env, NO npx, NO CLI)
       # -----------------------------------------
       - name: Generate Cucumber HTML report
         run: |
-          mkdir -p reports/cucumber
-          npm install multiple-cucumber-html-reporter --save-dev
+          if [ ! -d "cypress/reports/json" ]; then
+            echo "Cucumber JSON not found, skipping report generation"
+            exit 0
+          fi
 
-          node node_modules/multiple-cucumber-html-reporter/lib/index.js \
-            --jsonDir cypress/reports/json \
-            --reportPath reports/cucumber \
-            --reportName "Cypress Cucumber Report"
+          mkdir -p reports/cucumber
+          npm install --save-dev multiple-cucumber-html-reporter
+
+          node <<'EOF'
+          const reporter = require('multiple-cucumber-html-reporter');
+
+          reporter.generate({
+            jsonDir: 'cypress/reports/json',
+            reportPath: 'reports/cucumber',
+            reportName: 'Cypress Cucumber Report',
+            openReportInBrowser: false,
+            disableLog: true
+          });
+          EOF
 
       # -----------------------------------------
       # Upload reports as artifacts
