@@ -25,9 +25,4 @@ module.exports = defineConfig({
       return config;
     },
   },
-
-  reporter: "cucumber-json",
-  reporterOptions: {
-    outputFile: "cypress/reports/json/cucumber-report.json",
-  },
 });
