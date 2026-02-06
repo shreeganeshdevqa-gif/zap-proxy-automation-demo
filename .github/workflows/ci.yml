@@ -75,13 +75,14 @@ jobs:
 
       # -----------------------------------------
       # Run ZAP ONCE using Automation Framework
+      # FIXED: Added -cmd flag to run in headless mode
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -autorun /zap/wrk/zap-automation.yaml
+            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
       # Generate Cucumber HTML report
