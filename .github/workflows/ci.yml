@@ -31,27 +31,24 @@ jobs:
         run: npm install
 
       # -----------------------------------------
-      # Run Cypress tests (FORCE cucumber JSON)
+      # Run Cypress tests
+      # (does NOT block ZAP even if tests fail)
       # -----------------------------------------
       - name: Run Cypress tests
-        run: |
-          npx cypress run \
-            --browser chrome \
-            --env cucumberJson=true
+        run: npx cypress run --browser chrome
         continue-on-error: true
 
       # -----------------------------------------
-      # Create report directories
+      # Create ZAP report directories
       # -----------------------------------------
-      - name: Create report directories
+      - name: Create ZAP report directories
         run: |
           mkdir -p security-and-test-reports/zap-spider
           mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
-          mkdir -p security-and-test-reports/cucumber
 
       # -----------------------------------------
-      # Create ZAP Automation config
+      # Create ZAP automation config
       # -----------------------------------------
       - name: Create ZAP automation config
         run: |
@@ -67,6 +64,9 @@ jobs:
               failOnWarning: "false"
 
           jobs:
+            # -----------------------------
+            # Spider scan + report
+            # -----------------------------
             - type: "spider"
               parameters:
                 context: "Default Context"
@@ -79,6 +79,9 @@ jobs:
                 reportDir: "/zap/wrk/security-and-test-reports/zap-spider"
                 reportFile: "spider-report.html"
 
+            # -----------------------------
+            # Passive scan + report
+            # -----------------------------
             - type: "passiveScan-wait"
               parameters:
                 maxDuration: 2
@@ -89,6 +92,9 @@ jobs:
                 reportDir: "/zap/wrk/security-and-test-reports/zap-passive"
                 reportFile: "passive-report.html"
 
+            # -----------------------------
+            # Active scan + report
+            # -----------------------------
             - type: "activeScan"
               parameters:
                 context: "Default Context"
@@ -113,43 +119,9 @@ jobs:
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
-      # Generate Cucumber HTML report (FIXED)
+      # Upload ZAP reports
       # -----------------------------------------
-      - name: Generate Cucumber HTML report
-        run: |
-          if [ ! -d "cypress/reports/json" ]; then
-            echo "❌ Cucumber JSON not found"
-            ls -R cypress || true
-            exit 0
-          fi
-
-          npm install --save-dev multiple-cucumber-html-reporter
-
-          node <<'EOF'
-          const fs = require('fs');
-          const reporter = require('multiple-cucumber-html-reporter');
-
-          if (fs.readdirSync('cypress/reports/json').length === 0) {
-            console.log('❌ No JSON files inside cucumber json folder');
-            process.exit(0);
-          }
-
-          reporter.generate({
-            jsonDir: 'cypress/reports/json',
-            reportPath: 'security-and-test-reports/cucumber',
-            reportName: 'Cypress Cucumber Report',
-            pageTitle: 'Cypress Automation Results',
-            displayDuration: true,
-            openReportInBrowser: false
-          });
-
-          console.log('✅ Cucumber HTML report generated');
-          EOF
-
-      # -----------------------------------------
-      # Upload ALL reports
-      # -----------------------------------------
-      - name: Upload reports
+      - name: Upload security reports
         uses: actions/upload-artifact@v4
         with:
           name: security-and-test-reports
