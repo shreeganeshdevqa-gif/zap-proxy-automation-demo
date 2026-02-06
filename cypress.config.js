@@ -27,10 +27,11 @@ module.exports = defineConfig({
   },
 
   env: {
-    cucumberJson: {
-      enabled: true,
-      outputFolder: "cypress/cucumber-json",
-      filePrefix: "cucumber"
+    cucumber: {
+      json: {
+        enabled: true,
+        output: "cypress/reports/json/cucumber-report.json"
+      }
     }
   }
 });
