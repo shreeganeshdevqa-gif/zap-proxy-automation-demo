@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install NPM dependencies
+      - name: Install dependencies
         run: npm install
 
       # -------------------------------------------------
@@ -38,8 +38,9 @@ jobs:
             -config api.addrs.addr.name=.* \
             -config api.addrs.addr.regex=true
 
-      - name: Wait for ZAP to be ready
+      - name: Wait for ZAP
         run: |
+          echo "Waiting for ZAP to be ready..."
           for i in {1..30}; do
             if curl -s http://localhost:8080 >/dev/null; then
               echo "ZAP is ready"
@@ -51,66 +52,65 @@ jobs:
           exit 1
 
       # -------------------------------------------------
-      # Run Cypress through ZAP proxy (PASSIVE SCAN)
+      # Run Cypress (PASSIVE SCAN)
       # -------------------------------------------------
-      - name: Run Cypress Tests
+      - name: Run Cypress tests through ZAP proxy
         env:
           HTTP_PROXY: http://localhost:8080
           HTTPS_PROXY: http://localhost:8080
           NO_PROXY: localhost,127.0.0.1
-        run: |
-          npx cypress run --browser chrome
+        run: npx cypress run --browser chrome
 
       # -------------------------------------------------
-      # Create ZAP Automation YAML dynamically
+      # Create ZAP Automation config dynamically
       # -------------------------------------------------
-      - name: Create ZAP Automation Config
+      - name: Create ZAP automation file
         run: |
           cat <<'EOF' > zap-automation.yaml
           env:
+            parameters:
+              progressToStdout: true
+              failOnError: false
+              failOnWarning: false
+
             contexts:
               - name: Default Context
                 urls:
                   - https://opensource-demo.orangehrmlive.com
-            parameters:
-              failOnError: false
-              failOnWarning: false
-              progressToStdout: true
 
           jobs:
             - type: spider
               parameters:
                 context: Default Context
                 url: https://opensource-demo.orangehrmlive.com
-                maxDuration: 5
+                maxDuration: 3
 
             - type: passiveScan-wait
               parameters:
-                maxDuration: 5
+                maxDuration: 2
 
             - type: activeScan
               parameters:
                 context: Default Context
-                policy: Default Policy
-                maxDuration: 10
+                maxDuration: 5
 
             - type: report
               parameters:
                 template: traditional-html
                 reportDir: /zap/wrk/zap-reports
-                reportFile: zap-security-report.html
+                reportFile: zap-report.html
 
             - type: report
               parameters:
                 template: json
                 reportDir: /zap/wrk/zap-reports
-                reportFile: zap-security-report.json
+                reportFile: zap-report.json
           EOF
 
       # -------------------------------------------------
       # Run ZAP Spider + Active Scan
       # -------------------------------------------------
-      - name: Run ZAP Automation
+      - name: Run ZAP automation
         run: |
           docker exec zap zap.sh -cmd \
             -autorun /zap/wrk/zap-automation.yaml
@@ -118,7 +118,7 @@ jobs:
       # -------------------------------------------------
       # Generate Cucumber HTML report
       # -------------------------------------------------
-      - name: Generate Cucumber HTML Report
+      - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
           npx multiple-cucumber-html-reporter \
@@ -127,12 +127,12 @@ jobs:
             --reportName "Cypress Cucumber Report"
 
       # -------------------------------------------------
-      # Upload all reports
+      # Upload reports
       # -------------------------------------------------
-      - name: Upload Reports
+      - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-and-cypress-reports
+          name: security-and-test-reports
           path: |
             zap-reports
             reports/cucumber
