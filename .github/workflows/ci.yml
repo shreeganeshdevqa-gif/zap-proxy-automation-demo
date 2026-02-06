@@ -53,16 +53,37 @@ jobs:
               failOnWarning: "false"
 
           jobs:
+            # -----------------------------
+            # Spider scan
+            # -----------------------------
             - type: "spider"
               parameters:
                 context: "Default Context"
                 url: "https://opensource-demo.orangehrmlive.com"
                 maxDuration: 3
 
+            - type: "report"
+              parameters:
+                template: "traditional-html"
+                reportDir: "/zap/wrk/security-and-test-reports/zap-spider"
+                reportFile: "spider-report.html"
+
+            # -----------------------------
+            # Passive scan
+            # -----------------------------
             - type: "passiveScan-wait"
               parameters:
                 maxDuration: 2
 
+            - type: "report"
+              parameters:
+                template: "traditional-html"
+                reportDir: "/zap/wrk/security-and-test-reports/zap-passive"
+                reportFile: "passive-report.html"
+
+            # -----------------------------
+            # Active scan
+            # -----------------------------
             - type: "activeScan"
               parameters:
                 context: "Default Context"
@@ -71,20 +92,14 @@ jobs:
             - type: "report"
               parameters:
                 template: "traditional-html"
-                reportDir: "/zap/wrk"
-                reportFile: "zap-report.html"
-
-            - type: "report"
-              parameters:
-                template: "traditional-json"
-                reportDir: "/zap/wrk"
-                reportFile: "zap-report.json"
+                reportDir: "/zap/wrk/security-and-test-reports/zap-active"
+                reportFile: "active-report.html"
           EOF
 
       # -----------------------------------------
-      # Run ZAP (run as root to fix permissions)
+      # Run ZAP (root to avoid permission issues)
       # -----------------------------------------
-      - name: Run ZAP Spider + Active Scan
+      - name: Run ZAP scans
         run: |
           docker run --rm \
             --user root \
@@ -93,32 +108,16 @@ jobs:
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
-      # Collect ZAP reports
-      # -----------------------------------------
-      - name: Collect ZAP reports
-        run: |
-          mkdir -p zap-reports
-
-          if [ -f "zap-report.html" ]; then
-            mv zap-report.html zap-reports/
-          fi
-
-          if [ -f "zap-report.json" ]; then
-            mv zap-report.json zap-reports/
-          fi
-
-      # -----------------------------------------
       # Generate Cucumber HTML report
-      # (NO .env, NO npx, NO CLI)
       # -----------------------------------------
       - name: Generate Cucumber HTML report
         run: |
           if [ ! -d "cypress/reports/json" ]; then
-            echo "Cucumber JSON not found, skipping report generation"
+            echo "Cucumber JSON not found. Ensure Cypress Cucumber JSON reporter is enabled."
             exit 0
           fi
 
-          mkdir -p reports/cucumber
+          mkdir -p security-and-test-reports/cucumber
           npm install --save-dev multiple-cucumber-html-reporter
 
           node <<'EOF'
@@ -126,7 +125,7 @@ jobs:
 
           reporter.generate({
             jsonDir: 'cypress/reports/json',
-            reportPath: 'reports/cucumber',
+            reportPath: 'security-and-test-reports/cucumber',
             reportName: 'Cypress Cucumber Report',
             openReportInBrowser: false,
             disableLog: true
@@ -134,12 +133,10 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Upload reports as artifacts
+      # Upload ALL reports (single artifact)
       # -----------------------------------------
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
           name: security-and-test-reports
-          path: |
-            zap-reports
-            reports/cucumber
+          path: security-and-test-reports
