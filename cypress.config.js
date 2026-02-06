@@ -7,21 +7,12 @@ const {
   createEsbuildPlugin,
 } = require("@badeball/cypress-cucumber-preprocessor/esbuild");
 
-const BASE_URL = "https://opensource-demo.orangehrmlive.com";
-
-console.log("✅ Cypress baseUrl:", BASE_URL);
-
 module.exports = defineConfig({
   e2e: {
-    baseUrl: BASE_URL,
+    baseUrl: "https://opensource-demo.orangehrmlive.com",
     specPattern: "cypress/e2e/features/**/*.feature",
 
-    screenshotsFolder: "cypress/screenshots",
-    screenshotOnRunFailure: true,
-    video: false,
-
     async setupNodeEvents(on, config) {
-      // ✅ REQUIRED for Cucumber
       await addCucumberPreprocessorPlugin(on, config);
 
       on(
@@ -35,13 +26,11 @@ module.exports = defineConfig({
     },
   },
 
-  // ✅ THIS IS THE IMPORTANT FIX
   env: {
-    cucumber: {
-      json: {
-        enabled: true,
-        output: "cypress/reports/json", // <-- DIRECTORY, NOT FILE
-      },
-    },
-  },
+    cucumberJson: {
+      enabled: true,
+      outputFolder: "cypress/cucumber-json",
+      filePrefix: "cucumber"
+    }
+  }
 });
