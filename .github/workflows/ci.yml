@@ -10,26 +10,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------------------
+      # Checkout code
+      # -----------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # -----------------------------------------
+      # Setup Node.js
+      # -----------------------------------------
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      # -----------------------------------------
+      # Install dependencies
+      # -----------------------------------------
       - name: Install dependencies
         run: npm install
 
       # -----------------------------------------
-      # Run Cypress first (normal run)
+      # Run Cypress tests
       # -----------------------------------------
       - name: Run Cypress tests
         run: npx cypress run --browser chrome
 
       # -----------------------------------------
-      # Create ZAP automation file
-      # FIX: Change report directory to /zap/wrk (workspace root)
+      # Create ZAP Automation config
       # -----------------------------------------
       - name: Create ZAP automation config
         run: |
@@ -74,29 +82,27 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Run ZAP ONCE using Automation Framework
+      # Run ZAP (FIXED: run as root)
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
-          # Run ZAP
           docker run --rm \
+            --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
-      # Move reports to zap-reports directory
+      # Move ZAP reports
       # -----------------------------------------
       - name: Move ZAP reports to directory
         run: |
-          # Create zap-reports directory if it doesn't exist
           mkdir -p zap-reports
-          
-          # Move ZAP reports if they were generated
+
           if [ -f "zap-report.html" ]; then
             mv zap-report.html zap-reports/
           fi
-          
+
           if [ -f "zap-report.json" ]; then
             mv zap-report.json zap-reports/
           fi
@@ -107,18 +113,15 @@ jobs:
       - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
-          
-          # Install the reporter package first
           npm install multiple-cucumber-html-reporter
-          
-          # Generate the report
+
           npx multiple-cucumber-html-reporter \
             --jsonDir cypress/reports/json \
             --reportPath reports/cucumber \
             --reportName "Cypress Cucumber Report"
 
       # -----------------------------------------
-      # Upload reports
+      # Upload reports as artifacts
       # -----------------------------------------
       - name: Upload reports
         uses: actions/upload-artifact@v4
