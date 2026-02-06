@@ -1,12 +1,35 @@
-const reporter = require("cucumber-html-reporter");
+const fs = require("fs");
+const path = require("path");
+const reporter = require("multiple-cucumber-html-reporter");
 
-const options = {
-  theme: "bootstrap",
-  jsonFile: "cypress/cucumber-json/cucumber.json",
-  output: "reports/cucumber-html-report/report.html",
-  reportSuiteAsScenarios: true,
-  scenarioTimestamp: true,
-  launchReport: false
-};
+const jsonDir = path.join(__dirname, "cypress/reports/json");
+const reportDir = path.join(
+  __dirname,
+  "security-and-test-reports/cucumber"
+);
 
-reporter.generate(options);
+// Safety check
+if (!fs.existsSync(jsonDir) || fs.readdirSync(jsonDir).length === 0) {
+  console.error("❌ No Cucumber JSON files found. HTML report not generated.");
+  process.exit(0);
+}
+
+reporter.generate({
+  jsonDir: jsonDir,
+  reportPath: reportDir,
+  reportName: "Cypress Cucumber HTML Report",
+  pageTitle: "Automation Test Results",
+  displayDuration: true,
+  metadata: {
+    browser: {
+      name: "chrome",
+      version: "latest",
+    },
+    device: "CI Runner",
+    platform: {
+      name: "GitHub Actions",
+    },
+  },
+});
+
+console.log("✅ Cucumber HTML report generated successfully");

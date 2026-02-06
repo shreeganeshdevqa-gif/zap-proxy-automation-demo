@@ -3,16 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-     "test:chrome": "cypress run --browser chrome",
+    "test:chrome": "cypress run --browser chrome",
     "test:firefox": "cypress run --browser firefox",
     "test:firefox:proxy": "cross-env HTTP_PROXY=http://localhost:8080 HTTPS_PROXY=http://localhost:8080 NO_PROXY=localhost,127.0.0.1 cypress run --browser firefox",
-  "report": "node generate-report.js"
+    "report": "node generate-report.js"
   },
   "devDependencies": {
     "@badeball/cypress-cucumber-preprocessor": "^22.2.0",
     "@bahmutov/cypress-esbuild-preprocessor": "^2.2.0",
     "cross-env": "^10.1.0",
-    "cucumber-html-reporter": "^5.5.0",
     "cypress": "^14.2.0",
     "dotenv": "^16.4.5",
     "multiple-cucumber-html-reporter": "^3.9.3"
