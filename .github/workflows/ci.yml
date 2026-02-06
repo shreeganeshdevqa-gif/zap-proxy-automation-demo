@@ -74,27 +74,30 @@ jobs:
 
       # -----------------------------------------
       # Run ZAP ONCE using Automation Framework
-      # FIX: Set correct permissions for ZAP to write reports
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
           # Create directory for reports
           mkdir -p zap-reports
           
-          # Change ownership to allow ZAP to write (ZAP runs as user 1000)
-          sudo chown -R 1000:1000 zap-reports
-          
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk \
+            -u $(id -u):$(id -g) \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
       # Generate Cucumber HTML report
+      # FIX: Install the reporter first, then use it
       # -----------------------------------------
       - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
+          
+          # Install the reporter package first
+          npm install multiple-cucumber-html-reporter
+          
+          # Generate the report
           npx multiple-cucumber-html-reporter \
             --jsonDir cypress/reports/json \
             --reportPath reports/cucumber \
