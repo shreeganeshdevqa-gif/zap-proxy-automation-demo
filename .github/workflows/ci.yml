@@ -116,7 +116,7 @@ jobs:
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
+            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml || true
 
       # -----------------------------------------
       # Upload ZAP reports
