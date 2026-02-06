@@ -74,21 +74,31 @@ jobs:
 
       # -----------------------------------------
       # Run ZAP ONCE using Automation Framework
+      # FIX: Simplified approach without user flag
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
-          # Create directory for reports
+          # Create directory for reports with proper permissions
           mkdir -p zap-reports
           
+          # Run ZAP as the default user (zap) inside container
           docker run --rm \
-            -v ${{ github.workspace }}:/zap/wrk \
-            -u $(id -u):$(id -g) \
+            -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
 
       # -----------------------------------------
+      # Fix permissions after ZAP runs
+      # -----------------------------------------
+      - name: Fix report permissions
+        run: |
+          # Change ownership of generated reports back to current user
+          if [ -d "zap-reports" ]; then
+            sudo chown -R $USER:$USER zap-reports
+          fi
+
+      # -----------------------------------------
       # Generate Cucumber HTML report
-      # FIX: Install the reporter first, then use it
       # -----------------------------------------
       - name: Generate Cucumber HTML report
         run: |
