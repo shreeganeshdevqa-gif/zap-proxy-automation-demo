@@ -31,24 +31,23 @@ jobs:
         run: npm install
 
       # -----------------------------------------
-      # Run Cypress tests
-      # (does NOT block ZAP even if tests fail)
+      # Run Cypress tests (NON-BLOCKING)
       # -----------------------------------------
       - name: Run Cypress tests
         run: npx cypress run --browser chrome
         continue-on-error: true
 
       # -----------------------------------------
-      # Create ZAP report directories
+      # Create report directories
       # -----------------------------------------
-      - name: Create ZAP report directories
+      - name: Create report directories
         run: |
           mkdir -p security-and-test-reports/zap-spider
           mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
 
       # -----------------------------------------
-      # Create ZAP automation config
+      # Create ZAP Automation config
       # -----------------------------------------
       - name: Create ZAP automation config
         run: |
@@ -65,63 +64,67 @@ jobs:
 
           jobs:
             # -----------------------------
-            # Spider scan + report
+            # Spider Scan + Report
             # -----------------------------
-            - type: "spider"
+            - type: spider
               parameters:
                 context: "Default Context"
                 url: "https://opensource-demo.orangehrmlive.com"
                 maxDuration: 3
 
-            - type: "report"
+            - type: report
               parameters:
-                template: "traditional-html"
-                reportDir: "/zap/wrk/security-and-test-reports/zap-spider"
-                reportFile: "spider-report.html"
+                template: traditional-html
+                reportDir: /zap/wrk/security-and-test-reports/zap-spider
+                reportFile: spider-report.html
 
             # -----------------------------
-            # Passive scan + report
+            # Passive Scan + Report
             # -----------------------------
-            - type: "passiveScan-wait"
+            - type: passiveScan-wait
               parameters:
                 maxDuration: 2
 
-            - type: "report"
+            - type: report
               parameters:
-                template: "traditional-html"
-                reportDir: "/zap/wrk/security-and-test-reports/zap-passive"
-                reportFile: "passive-report.html"
+                template: traditional-html
+                reportDir: /zap/wrk/security-and-test-reports/zap-passive
+                reportFile: passive-report.html
 
             # -----------------------------
-            # Active scan + report
+            # Active Scan + Report
             # -----------------------------
-            - type: "activeScan"
+            - type: activeScan
               parameters:
                 context: "Default Context"
                 maxScanDurationInMins: 5
 
-            - type: "report"
+            - type: report
               parameters:
-                template: "traditional-html"
-                reportDir: "/zap/wrk/security-and-test-reports/zap-active"
-                reportFile: "active-report.html"
+                template: traditional-html
+                reportDir: /zap/wrk/security-and-test-reports/zap-active
+                reportFile: active-report.html
           EOF
 
       # -----------------------------------------
-      # Run ZAP scans
+      # Run ZAP (FORCED SUCCESS — NO ANNOTATION)
       # -----------------------------------------
       - name: Run ZAP scans
+        shell: bash
         run: |
+          set +e
           docker run --rm \
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml || true
+            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
+          echo "ZAP completed — forcing success exit"
+          exit 0
 
       # -----------------------------------------
-      # Upload ZAP reports
+      # Upload ALL reports
       # -----------------------------------------
-      - name: Upload security reports
+      - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
           name: security-and-test-reports
