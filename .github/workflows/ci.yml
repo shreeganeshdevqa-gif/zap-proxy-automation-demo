@@ -28,57 +28,58 @@ jobs:
         run: npx cypress run --browser chrome
 
       # -----------------------------------------
-      # Create ZAP automation file
+      # Create ZAP automation file - FIXED SYNTAX
       # -----------------------------------------
       - name: Create ZAP automation config
         run: |
           cat <<'EOF' > zap-automation.yaml
           env:
+            contexts:
+              - name: "Default Context"
+                urls:
+                  - "https://opensource-demo.orangehrmlive.com"
             parameters:
-              progressToStdout: true
-              failOnError: false
-              failOnWarning: false
-
-          contexts:
-            - name: Default Context
-              urls:
-                - https://opensource-demo.orangehrmlive.com
+              progressToStdout: "true"
+              failOnError: "false"
+              failOnWarning: "false"
 
           jobs:
-            - type: spider
+            - type: "spider"
               parameters:
-                context: Default Context
-                url: https://opensource-demo.orangehrmlive.com
+                context: "Default Context"
+                url: "https://opensource-demo.orangehrmlive.com"
                 maxDuration: 3
 
-            - type: passiveScan-wait
+            - type: "passiveScan-wait"
               parameters:
                 maxDuration: 2
 
-            - type: activeScan
+            - type: "activeScan"
               parameters:
-                context: Default Context
-                maxDuration: 5
+                context: "Default Context"
+                maxScanDurationInMins: 5
 
-            - type: report
+            - type: "report"
               parameters:
-                template: traditional-html
-                reportDir: /zap/wrk/zap-reports
-                reportFile: zap-report.html
+                template: "traditional-html"
+                reportDir: "/zap/wrk/zap-reports"
+                reportFile: "zap-report.html"
 
-            - type: report
+            - type: "report"
               parameters:
-                template: json
-                reportDir: /zap/wrk/zap-reports
-                reportFile: zap-report.json
+                template: "traditional-json"
+                reportDir: "/zap/wrk/zap-reports"
+                reportFile: "zap-report.json"
           EOF
 
       # -----------------------------------------
       # Run ZAP ONCE using Automation Framework
-      # FIXED: Added -cmd flag to run in headless mode
       # -----------------------------------------
       - name: Run ZAP Spider + Active Scan
         run: |
+          # Create directory for reports
+          mkdir -p zap-reports
+          
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
