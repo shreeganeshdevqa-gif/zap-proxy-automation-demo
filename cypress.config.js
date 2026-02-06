@@ -12,12 +12,7 @@ module.exports = defineConfig({
     baseUrl: "https://opensource-demo.orangehrmlive.com",
     specPattern: "cypress/e2e/features/**/*.feature",
 
-    screenshotsFolder: "cypress/screenshots",
-    screenshotOnRunFailure: true,
-    video: false,
-
     async setupNodeEvents(on, config) {
-      // REQUIRED
       await addCucumberPreprocessorPlugin(on, config);
 
       on(
@@ -31,9 +26,7 @@ module.exports = defineConfig({
     },
   },
 
-  // 🔥 THIS IS THE MISSING PIECE
   reporter: "cucumber-json",
-
   reporterOptions: {
     outputFile: "cypress/reports/json/cucumber-report.json",
   },
