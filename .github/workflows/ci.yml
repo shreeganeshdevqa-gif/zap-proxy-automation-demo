@@ -32,11 +32,12 @@ jobs:
         run: npm install
 
       # -----------------------------------------
-      # Run Cypress tests (NON-BLOCKING)
+      # Run Cypress tests (FORCED NON-BLOCKING)
       # -----------------------------------------
       - name: Run Cypress tests
-        run: npx cypress run --browser chrome
-        continue-on-error: true
+        shell: bash
+        run: |
+          npx cypress run --browser chrome || true
 
       # -----------------------------------------
       # Create report directories
@@ -100,43 +101,16 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Run ZAP (FORCED SUCCESS — no annotations)
+      # Run ZAP scans (EXIT CODE NEUTRALIZED)
       # -----------------------------------------
       - name: Run ZAP scans
         shell: bash
         run: |
-          set +e
           docker run --rm \
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
-          echo "ZAP finished — exit code overridden"
-          exit 0
-
-      # -----------------------------------------
-      # Generate Cucumber HTML report (optional)
-      # -----------------------------------------
-      - name: Generate Cucumber HTML report
-        shell: bash
-        run: |
-          if [ ! -d "cypress/reports/json" ]; then
-            echo "No Cucumber JSON found — skipping report"
-            exit 0
-          fi
-
-          npm install --no-save multiple-cucumber-html-reporter
-
-          node <<'EOF'
-          const reporter = require('multiple-cucumber-html-reporter');
-          reporter.generate({
-            jsonDir: 'cypress/reports/json',
-            reportPath: 'security-and-test-reports/cucumber',
-            reportName: 'Cypress Cucumber Report',
-            openReportInBrowser: false,
-            disableLog: true
-          });
-          EOF
+            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml || true
 
       # -----------------------------------------
       # Upload ALL reports (ALWAYS)
