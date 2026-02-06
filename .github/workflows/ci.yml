@@ -113,9 +113,9 @@ jobs:
       - name: Generate Cucumber HTML report
         run: |
           mkdir -p reports/cucumber
-          npm install multiple-cucumber-html-reporter
+          npm install multiple-cucumber-html-reporter --save-dev
 
-          npx multiple-cucumber-html-reporter \
+          node node_modules/multiple-cucumber-html-reporter/lib/index.js \
             --jsonDir cypress/reports/json \
             --reportPath reports/cucumber \
             --reportName "Cypress Cucumber Report"
