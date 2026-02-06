@@ -23,6 +23,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       # -----------------------------------------
       # Install dependencies
@@ -45,6 +46,7 @@ jobs:
           mkdir -p security-and-test-reports/zap-spider
           mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
+          mkdir -p security-and-test-reports/cucumber
 
       # -----------------------------------------
       # Create ZAP Automation config
@@ -63,9 +65,6 @@ jobs:
               failOnWarning: "false"
 
           jobs:
-            # -----------------------------
-            # Spider Scan + Report
-            # -----------------------------
             - type: spider
               parameters:
                 context: "Default Context"
@@ -78,9 +77,6 @@ jobs:
                 reportDir: /zap/wrk/security-and-test-reports/zap-spider
                 reportFile: spider-report.html
 
-            # -----------------------------
-            # Passive Scan + Report
-            # -----------------------------
             - type: passiveScan-wait
               parameters:
                 maxDuration: 2
@@ -91,9 +87,6 @@ jobs:
                 reportDir: /zap/wrk/security-and-test-reports/zap-passive
                 reportFile: passive-report.html
 
-            # -----------------------------
-            # Active Scan + Report
-            # -----------------------------
             - type: activeScan
               parameters:
                 context: "Default Context"
@@ -107,7 +100,7 @@ jobs:
           EOF
 
       # -----------------------------------------
-      # Run ZAP (FORCED SUCCESS — NO ANNOTATION)
+      # Run ZAP (FORCED SUCCESS — no annotations)
       # -----------------------------------------
       - name: Run ZAP scans
         shell: bash
@@ -118,13 +111,38 @@ jobs:
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml
-          echo "ZAP completed — forcing success exit"
+          echo "ZAP finished — exit code overridden"
           exit 0
 
       # -----------------------------------------
-      # Upload ALL reports
+      # Generate Cucumber HTML report (optional)
+      # -----------------------------------------
+      - name: Generate Cucumber HTML report
+        shell: bash
+        run: |
+          if [ ! -d "cypress/reports/json" ]; then
+            echo "No Cucumber JSON found — skipping report"
+            exit 0
+          fi
+
+          npm install --no-save multiple-cucumber-html-reporter
+
+          node <<'EOF'
+          const reporter = require('multiple-cucumber-html-reporter');
+          reporter.generate({
+            jsonDir: 'cypress/reports/json',
+            reportPath: 'security-and-test-reports/cucumber',
+            reportName: 'Cypress Cucumber Report',
+            openReportInBrowser: false,
+            disableLog: true
+          });
+          EOF
+
+      # -----------------------------------------
+      # Upload ALL reports (ALWAYS)
       # -----------------------------------------
       - name: Upload reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: security-and-test-reports
