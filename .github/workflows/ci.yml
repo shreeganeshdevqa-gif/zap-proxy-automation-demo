@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -18,17 +18,18 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install dependencies
+      - name: Install NPM dependencies
         run: npm install
 
-      # ---------------------------
-      # Start ZAP in daemon mode
-      # ---------------------------
+      # -------------------------------------------------
+      # Start ZAP daemon
+      # -------------------------------------------------
       - name: Start ZAP
         run: |
           docker run -d \
             --name zap \
             -p 8080:8080 \
+            -v ${{ github.workspace }}:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -daemon \
             -host 0.0.0.0 \
@@ -37,9 +38,8 @@ jobs:
             -config api.addrs.addr.name=.* \
             -config api.addrs.addr.regex=true
 
-      - name: Wait for ZAP
+      - name: Wait for ZAP to be ready
         run: |
-          echo "Waiting for ZAP to be ready..."
           for i in {1..30}; do
             if curl -s http://localhost:8080 >/dev/null; then
               echo "ZAP is ready"
@@ -47,13 +47,13 @@ jobs:
             fi
             sleep 5
           done
-          echo "ZAP failed to start"
+          echo "ZAP did not start"
           exit 1
 
-      # ---------------------------
-      # Run Cypress via ZAP proxy
-      # ---------------------------
-      - name: Run Cypress tests
+      # -------------------------------------------------
+      # Run Cypress through ZAP proxy (PASSIVE SCAN)
+      # -------------------------------------------------
+      - name: Run Cypress Tests
         env:
           HTTP_PROXY: http://localhost:8080
           HTTPS_PROXY: http://localhost:8080
@@ -61,39 +61,64 @@ jobs:
         run: |
           npx cypress run --browser chrome
 
-      # ---------------------------
-      # ZAP Spider
-      # ---------------------------
-      - name: ZAP Spider Scan
+      # -------------------------------------------------
+      # Create ZAP Automation YAML dynamically
+      # -------------------------------------------------
+      - name: Create ZAP Automation Config
         run: |
-          docker exec zap zap-cli spider https://opensource-demo.orangehrmlive.com
+          cat <<'EOF' > zap-automation.yaml
+          env:
+            contexts:
+              - name: Default Context
+                urls:
+                  - https://opensource-demo.orangehrmlive.com
+            parameters:
+              failOnError: false
+              failOnWarning: false
+              progressToStdout: true
 
-      # ---------------------------
-      # ZAP Active Scan
-      # ---------------------------
-      - name: ZAP Active Scan
+          jobs:
+            - type: spider
+              parameters:
+                context: Default Context
+                url: https://opensource-demo.orangehrmlive.com
+                maxDuration: 5
+
+            - type: passiveScan-wait
+              parameters:
+                maxDuration: 5
+
+            - type: activeScan
+              parameters:
+                context: Default Context
+                policy: Default Policy
+                maxDuration: 10
+
+            - type: report
+              parameters:
+                template: traditional-html
+                reportDir: /zap/wrk/zap-reports
+                reportFile: zap-security-report.html
+
+            - type: report
+              parameters:
+                template: json
+                reportDir: /zap/wrk/zap-reports
+                reportFile: zap-security-report.json
+          EOF
+
+      # -------------------------------------------------
+      # Run ZAP Spider + Active Scan
+      # -------------------------------------------------
+      - name: Run ZAP Automation
         run: |
-          docker exec zap zap-cli active-scan \
-            https://opensource-demo.orangehrmlive.com
+          docker exec zap zap.sh -cmd \
+            -autorun /zap/wrk/zap-automation.yaml
 
-      # ---------------------------
-      # Generate ZAP Reports
-      # ---------------------------
-      - name: Generate ZAP Reports
-        run: |
-          mkdir -p zap-reports
-          docker exec zap zap-cli report \
-            -o /zap/wrk/zap-report.html -f html
-          docker exec zap zap-cli report \
-            -o /zap/wrk/zap-report.json -f json
-          docker cp zap:/zap/wrk/zap-report.html zap-reports/
-          docker cp zap:/zap/wrk/zap-report.json zap-reports/
-
-      # ---------------------------
-      # Generate Cucumber HTML Report
-      # ---------------------------
+      # -------------------------------------------------
+      # Generate Cucumber HTML report
+      # -------------------------------------------------
       - name: Generate Cucumber HTML Report
-        shell: bash
         run: |
           mkdir -p reports/cucumber
           npx multiple-cucumber-html-reporter \
@@ -101,13 +126,13 @@ jobs:
             --reportPath reports/cucumber \
             --reportName "Cypress Cucumber Report"
 
-      # ---------------------------
-      # Upload Artifacts
-      # ---------------------------
+      # -------------------------------------------------
+      # Upload all reports
+      # -------------------------------------------------
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-cypress-reports
+          name: zap-and-cypress-reports
           path: |
             zap-reports
             reports/cucumber
