@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  # Target URL – set via repository secrets or directly
+  # Target URL – override via repository secret or variable
   CYPRESS_BASE_URL: ${{ secrets.CYPRESS_BASE_URL || 'https://opensource-demo.orangehrmlive.com' }}
 
   # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
@@ -14,7 +14,7 @@ env:
   ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'false' }}
   ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'false' }}
 
-  # Fix Node.js deprecation warning for GitHub Actions
+  # Fix Node.js deprecation warning
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -24,25 +24,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
+      # 0. Create base directory (will be populated by scans)
+      # ------------------------------------------------------------
       - name: Create report directories
         run: |
           mkdir -p security-and-test-reports/zap-spider
           mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
-          echo "Directories created"
+          echo "Base directories created"
 
       # ------------------------------------------------------------
       # 1. SPIDER SCAN (only if enabled)
       # ------------------------------------------------------------
-      - name: Generate Spider scan config
+      - name: Spider scan – generate config
         if: env.ENABLE_SPIDER_GithubActions == 'true'
         run: |
-          cat <<'EOF' > zap-spider.yaml
+          # Use double quotes so $CYPRESS_BASE_URL expands
+          cat <<EOF > zap-spider.yaml
           env:
             contexts:
               - name: "Default Context"
                 urls:
-                  - "${TARGET_URL}"
+                  - "$CYPRESS_BASE_URL"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -52,7 +56,7 @@ jobs:
             - type: spider
               parameters:
                 context: "Default Context"
-                url: "${TARGET_URL}"
+                url: "$CYPRESS_BASE_URL"
                 maxDuration: 3
 
             - type: report
@@ -61,29 +65,38 @@ jobs:
                 reportDir: /zap/wrk/security-and-test-reports/zap-spider
                 reportFile: spider-report.html
           EOF
-          # Replace placeholder with actual URL
-          sed -i "s|\${TARGET_URL}|${CYPRESS_BASE_URL}|g" zap-spider.yaml
+          echo "=== Spider config ==="
+          cat zap-spider.yaml
 
-      - name: Run Spider scan
+      - name: Spider scan – run
         if: env.ENABLE_SPIDER_GithubActions == 'true'
+        continue-on-error: true
         run: |
+          # Ensure target folder exists (in case previous steps didn't)
+          mkdir -p security-and-test-reports/zap-spider
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-spider.yaml || true
+            zap.sh -cmd -autorun /zap/wrk/zap-spider.yaml
+
+      - name: Spider scan – list reports
+        if: env.ENABLE_SPIDER_GithubActions == 'true' && always()
+        run: |
+          echo "Files in security-and-test-reports/zap-spider:"
+          ls -la security-and-test-reports/zap-spider/ || echo "No files found"
 
       # ------------------------------------------------------------
       # 2. PASSIVE SCAN (only if enabled)
       # ------------------------------------------------------------
-      - name: Generate Passive scan config
+      - name: Passive scan – generate config
         if: env.ENABLE_PASSIVE_GithubActions == 'true'
         run: |
-          cat <<'EOF' > zap-passive.yaml
+          cat <<EOF > zap-passive.yaml
           env:
             contexts:
               - name: "Default Context"
                 urls:
-                  - "${TARGET_URL}"
+                  - "$CYPRESS_BASE_URL"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -93,7 +106,7 @@ jobs:
             - type: spider
               parameters:
                 context: "Default Context"
-                url: "${TARGET_URL}"
+                url: "$CYPRESS_BASE_URL"
                 maxDuration: 3
 
             - type: passiveScan-wait
@@ -106,28 +119,37 @@ jobs:
                 reportDir: /zap/wrk/security-and-test-reports/zap-passive
                 reportFile: passive-report.html
           EOF
-          sed -i "s|\${TARGET_URL}|${CYPRESS_BASE_URL}|g" zap-passive.yaml
+          echo "=== Passive config ==="
+          cat zap-passive.yaml
 
-      - name: Run Passive scan
+      - name: Passive scan – run
         if: env.ENABLE_PASSIVE_GithubActions == 'true'
+        continue-on-error: true
         run: |
+          mkdir -p security-and-test-reports/zap-passive
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-passive.yaml || true
+            zap.sh -cmd -autorun /zap/wrk/zap-passive.yaml
+
+      - name: Passive scan – list reports
+        if: env.ENABLE_PASSIVE_GithubActions == 'true' && always()
+        run: |
+          echo "Files in security-and-test-reports/zap-passive:"
+          ls -la security-and-test-reports/zap-passive/ || echo "No files found"
 
       # ------------------------------------------------------------
       # 3. ACTIVE SCAN (only if enabled)
       # ------------------------------------------------------------
-      - name: Generate Active scan config
+      - name: Active scan – generate config
         if: env.ENABLE_ACTIVE_GithubActions == 'true'
         run: |
-          cat <<'EOF' > zap-active.yaml
+          cat <<EOF > zap-active.yaml
           env:
             contexts:
               - name: "Default Context"
                 urls:
-                  - "${TARGET_URL}"
+                  - "$CYPRESS_BASE_URL"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -137,7 +159,7 @@ jobs:
             - type: spider
               parameters:
                 context: "Default Context"
-                url: "${TARGET_URL}"
+                url: "$CYPRESS_BASE_URL"
                 maxDuration: 3
 
             - type: passiveScan-wait
@@ -155,27 +177,36 @@ jobs:
                 reportDir: /zap/wrk/security-and-test-reports/zap-active
                 reportFile: active-report.html
           EOF
-          sed -i "s|\${TARGET_URL}|${CYPRESS_BASE_URL}|g" zap-active.yaml
+          echo "=== Active config ==="
+          cat zap-active.yaml
 
-      - name: Run Active scan
+      - name: Active scan – run
         if: env.ENABLE_ACTIVE_GithubActions == 'true'
+        continue-on-error: true
         run: |
+          mkdir -p security-and-test-reports/zap-active
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-active.yaml || true
+            zap.sh -cmd -autorun /zap/wrk/zap-active.yaml
+
+      - name: Active scan – list reports
+        if: env.ENABLE_ACTIVE_GithubActions == 'true' && always()
+        run: |
+          echo "Files in security-and-test-reports/zap-active:"
+          ls -la security-and-test-reports/zap-active/ || echo "No files found"
 
       # ------------------------------------------------------------
-      # Debug: List generated files
+      # 4. Debug: Full directory tree (always run)
       # ------------------------------------------------------------
       - name: List all generated reports
         if: always()
         run: |
-          echo "=== Listing all report directories ==="
-          ls -R security-and-test-reports/ || echo "No reports found"
+          echo "=== Full directory tree of security-and-test-reports ==="
+          find security-and-test-reports -type f -ls || echo "No files found"
 
       # ------------------------------------------------------------
-      # Upload all reports as artifacts
+      # 5. Upload all reports as artifacts
       # ------------------------------------------------------------
       - name: Upload ZAP reports
         if: always()
