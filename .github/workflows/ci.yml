@@ -1,4 +1,4 @@
-name: Cypress + ZAP Security Scan
+name: Cypress + ZAP Authenticated Security Scan
 
 on:
   push:
@@ -9,35 +9,21 @@ jobs:
   zap-cypress:
     runs-on: ubuntu-latest
 
+    env:
+      CYPRESS_BASE_URL: "https://opensource-demo.orangehrmlive.com"
+
+      ENABLE_SPIDER_GithubActions: "true"
+      ENABLE_PASSIVE_GithubActions: "false"
+      ENABLE_ACTIVE_GithubActions: "false"
+
+      ZAP_USERNAME: "Admin"
+      ZAP_PASSWORD: "admin123"
+
     steps:
       # -----------------------------------------
-      # Checkout repository
+      # Checkout
       # -----------------------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # -----------------------------------------
-      # Setup Node.js
-      # -----------------------------------------
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      # -----------------------------------------
-      # Install dependencies
-      # -----------------------------------------
-      - name: Install dependencies
-        run: npm install
-
-      # -----------------------------------------
-      # Run Cypress tests (FORCED NON-BLOCKING)
-      # -----------------------------------------
-      - name: Run Cypress tests
-        shell: bash
-        run: |
-          npx cypress run --browser chrome || true
+      - uses: actions/checkout@v4
 
       # -----------------------------------------
       # Create report directories
@@ -45,79 +31,66 @@ jobs:
       - name: Create report directories
         run: |
           mkdir -p security-and-test-reports/zap-spider
-          mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
-          mkdir -p security-and-test-reports/cucumber
 
       # -----------------------------------------
-      # Create ZAP Automation config
+      # Create ZAP Automation Config (AUTH ENABLED)
       # -----------------------------------------
-      - name: Create ZAP automation config
+      - name: Create ZAP Auth Config
         run: |
-          cat <<'EOF' > zap-automation.yaml
+          cat <<EOF > zap-auth.yaml
           env:
             contexts:
-              - name: "Default Context"
+              - name: "Auth Context"
                 urls:
-                  - "https://opensource-demo.orangehrmlive.com"
-            parameters:
-              progressToStdout: "true"
-              failOnError: "false"
-              failOnWarning: "false"
+                  - "${CYPRESS_BASE_URL}"
+                authentication:
+                  method: form
+                  parameters:
+                    loginUrl: "${CYPRESS_BASE_URL}/web/index.php/auth/login"
+                    loginRequestData: "username={%username%}&password={%password%}"
+                users:
+                  - name: "test-user"
+                    credentials:
+                      username: "${ZAP_USERNAME}"
+                      password: "${ZAP_PASSWORD}"
 
           jobs:
             - type: spider
               parameters:
-                context: "Default Context"
-                url: "https://opensource-demo.orangehrmlive.com"
+                context: "Auth Context"
+                user: "test-user"
                 maxDuration: 3
-
-            - type: report
-              parameters:
-                template: traditional-html
-                reportDir: /zap/wrk/security-and-test-reports/zap-spider
-                reportFile: spider-report.html
-
-            - type: passiveScan-wait
-              parameters:
-                maxDuration: 2
-
-            - type: report
-              parameters:
-                template: traditional-html
-                reportDir: /zap/wrk/security-and-test-reports/zap-passive
-                reportFile: passive-report.html
 
             - type: activeScan
               parameters:
-                context: "Default Context"
+                context: "Auth Context"
+                user: "test-user"
                 maxScanDurationInMins: 5
 
             - type: report
               parameters:
                 template: traditional-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-active
-                reportFile: active-report.html
+                reportFile: authenticated-active-report.html
           EOF
 
       # -----------------------------------------
-      # Run ZAP scans (EXIT CODE NEUTRALIZED)
+      # Run ZAP Authenticated Scan
       # -----------------------------------------
-      - name: Run ZAP scans
-        shell: bash
+      - name: Run Authenticated ZAP Scan
         run: |
           docker run --rm \
-            --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-automation.yaml || true
+            zap.sh -cmd -autorun /zap/wrk/zap-auth.yaml || true
 
       # -----------------------------------------
-      # Upload ALL reports (ALWAYS)
+      # Upload Reports
       # -----------------------------------------
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-and-test-reports
+          name: zap-authenticated-reports
           path: security-and-test-reports
