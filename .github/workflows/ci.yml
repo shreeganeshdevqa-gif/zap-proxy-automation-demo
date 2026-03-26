@@ -11,7 +11,7 @@ env:
 
   # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
   ENABLE_SPIDER_GithubActions: ${{ vars.ENABLE_SPIDER_GithubActions || 'true' }}
-  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'false' }}
+  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'true' }}
   ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'false' }}
 
   # Fix Node.js deprecation warning
