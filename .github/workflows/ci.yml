@@ -7,7 +7,7 @@ on:
 
 env:
   # Target URL – override via repository secret or variable
-  CYPRESS_BASE_URL: ${{ secrets.CYPRESS_BASE_URL || 'https://opensource-demo.orangehrmlive.com' }}
+  CYPRESS_BASE_URL: ${{ secrets.CYPRESS_BASE_URL || 'https://opensource-demo.orangehrmlive.com/web/index.php/auth/login' }}
 
   # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
   ENABLE_SPIDER_GithubActions: ${{ vars.ENABLE_SPIDER_GithubActions || 'true' }}
@@ -23,6 +23,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Optional: Check if target is reachable
+      - name: Check target reachability
+        run: |
+          echo "Checking connectivity to $CYPRESS_BASE_URL"
+          curl -I -L -s -o /dev/null -w "%{http_code}\n" "$CYPRESS_BASE_URL" || echo "WARNING: Target may be unreachable"
 
       # ------------------------------------------------------------
       # 0. Create base directory (will be populated by scans)
@@ -72,7 +78,6 @@ jobs:
         if: env.ENABLE_SPIDER_GithubActions == 'true'
         continue-on-error: true
         run: |
-          # Ensure target folder exists (in case previous steps didn't)
           mkdir -p security-and-test-reports/zap-spider
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk:rw \
