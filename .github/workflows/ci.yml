@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
+  # Scan toggles (defaults: Spider=true, Passive=true, Active=true)
   ENABLE_SPIDER_GithubActions: ${{ vars.ENABLE_SPIDER_GithubActions || 'true' }}
   ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'true' }}
   ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'true' }}
@@ -52,7 +52,7 @@ jobs:
           echo "OrangeHRM started on port ${{ steps.find_port.outputs.PORT }}"
 
       # ------------------------------------------------------------
-      # 3. Wait for OrangeHRM to be ready (with extended timeout)
+      # 3. Wait for OrangeHRM to be ready (with robust curl error handling)
       # ------------------------------------------------------------
       - name: Wait for OrangeHRM to be ready
         run: |
@@ -61,10 +61,15 @@ jobs:
           APP_PORT="${{ steps.find_port.outputs.PORT }}"
           PATHS=("/" "/web/index.php/auth/login")
           MAX_ATTEMPTS=60
+
+          # Give container a moment to start listening
+          sleep 5
+
           for i in $(seq 1 $MAX_ATTEMPTS); do
             for path in "${PATHS[@]}"; do
               URL="http://${APP_HOST}:${APP_PORT}${path}"
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+              # Capture HTTP status, fallback to "000" if curl fails
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
               if [[ "$STATUS" == "200" || "$STATUS" == "302" ]]; then
                 echo "OrangeHRM is ready at $URL (HTTP $STATUS)!"
                 exit 0
@@ -77,6 +82,7 @@ jobs:
             fi
             sleep 5
           done
+
           echo "OrangeHRM did not become ready in time"
           echo "Final container logs:"
           docker logs orangehrm --tail 50
