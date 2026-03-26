@@ -136,7 +136,7 @@ jobs:
 
             - type: report
               parameters:
-                template: traditional-html
+                template: modern
                 reportDir: /zap/wrk/security-and-test-reports/zap-spider
                 reportFile: spider-report.html
           EOF
