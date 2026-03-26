@@ -8,8 +8,8 @@ on:
 env:
   # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
   ENABLE_SPIDER_GithubActions: ${{ vars.ENABLE_SPIDER_GithubActions || 'true' }}
-  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'false' }}
-  ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'false' }}
+  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'true' }}
+  ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'true' }}
 
   # Fix Node.js deprecation warning
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
