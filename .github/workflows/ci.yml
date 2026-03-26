@@ -23,12 +23,12 @@ jobs:
         uses: actions/checkout@v4
 
       # ------------------------------------------------------------
-      # 1. Find an available port (prefer 8080, fallback to 8081, etc.)
+      # 1. Find an available port (prefer 3000, then 8080, 8081, etc.)
       # ------------------------------------------------------------
       - name: Find available port
         id: find_port
         run: |
-          for port in 8080 8081 8082 8083 8084; do
+          for port in 3000 8080 8081 8082 8083 8084; do
             if ! ss -lpn | grep -q ":$port "; then
               echo "PORT=$port" >> $GITHUB_OUTPUT
               echo "Found free port: $port"
@@ -36,8 +36,8 @@ jobs:
             fi
           done
           if [ -z "${{ steps.find_port.outputs.PORT }}" ]; then
-            echo "No free port found in range 8080-8084, using 8080 as fallback"
-            echo "PORT=8080" >> $GITHUB_OUTPUT
+            echo "No free port found in range 3000,8080-8084, using 3000 as fallback"
+            echo "PORT=3000" >> $GITHUB_OUTPUT
           fi
 
       # ------------------------------------------------------------
@@ -52,13 +52,14 @@ jobs:
           echo "OrangeHRM started on port ${{ steps.find_port.outputs.PORT }}"
 
       # ------------------------------------------------------------
-      # 3. Wait for OrangeHRM to be ready (curl with retry)
+      # 3. Wait for OrangeHRM to be ready (check login page)
       # ------------------------------------------------------------
       - name: Wait for OrangeHRM to be ready
         run: |
           echo "Waiting for OrangeHRM to be ready..."
+          APP_URL="http://localhost:${{ steps.find_port.outputs.PORT }}/web/index.php/auth/login"
           for i in {1..30}; do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:${{ steps.find_port.outputs.PORT }} | grep -q "200"; then
+            if curl -s -o /dev/null -w "%{http_code}" "$APP_URL" | grep -q "200\|302"; then
               echo "OrangeHRM is ready!"
               exit 0
             fi
