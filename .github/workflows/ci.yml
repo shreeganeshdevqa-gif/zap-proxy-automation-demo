@@ -66,15 +66,9 @@ jobs:
 
             - type: report
               parameters:
-                template: traditional-html
+                template: modern-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-spider
                 reportFile: spider-report.html
-
-            - type: report
-              parameters:
-                template: traditional-xml
-                reportDir: /zap/wrk/security-and-test-reports/zap-spider
-                reportFile: spider-report.xml
           EOF
           echo "=== Spider config ==="
           cat zap-spider.yaml
@@ -126,15 +120,9 @@ jobs:
 
             - type: report
               parameters:
-                template: traditional-html
+                template: modern-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-passive
                 reportFile: passive-report.html
-
-            - type: report
-              parameters:
-                template: traditional-xml
-                reportDir: /zap/wrk/security-and-test-reports/zap-passive
-                reportFile: passive-report.xml
           EOF
           echo "=== Passive config ==="
           cat zap-passive.yaml
@@ -191,15 +179,9 @@ jobs:
 
             - type: report
               parameters:
-                template: traditional-html
+                template: modern-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-active
                 reportFile: active-report.html
-
-            - type: report
-              parameters:
-                template: traditional-xml
-                reportDir: /zap/wrk/security-and-test-reports/zap-active
-                reportFile: active-report.xml
           EOF
           echo "=== Active config ==="
           cat zap-active.yaml
