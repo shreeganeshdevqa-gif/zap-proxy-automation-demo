@@ -1,4 +1,4 @@
-name: Cypress + ZAP Authenticated Security Scan
+name: Cypress + ZAP Security Scan (Controlled)
 
 on:
   push:
@@ -10,20 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # 🌐 Target URL
       CYPRESS_BASE_URL: "https://opensource-demo.orangehrmlive.com"
 
+      # 🎛️ Enable / Disable Scans
       ENABLE_SPIDER_GithubActions: "true"
       ENABLE_PASSIVE_GithubActions: "false"
       ENABLE_ACTIVE_GithubActions: "false"
 
-      ZAP_USERNAME: "Admin"
-      ZAP_PASSWORD: "admin123"
+      # ⚠️ Fix Node.js deprecation warning
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # -----------------------------------------
-      # Checkout
+      # Checkout repository
       # -----------------------------------------
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       # -----------------------------------------
       # Create report directories
@@ -31,59 +34,63 @@ jobs:
       - name: Create report directories
         run: |
           mkdir -p security-and-test-reports/zap-spider
+          mkdir -p security-and-test-reports/zap-passive
           mkdir -p security-and-test-reports/zap-active
 
-      # -----------------------------------------
-      # Create ZAP Automation Config (AUTH ENABLED)
-      # -----------------------------------------
-      - name: Create ZAP Auth Config
+      # =========================================
+      # 🕷️ SPIDER SCAN
+      # =========================================
+      - name: Run ZAP Spider Scan
+        if: env.ENABLE_SPIDER_GithubActions == 'true'
         run: |
-          cat <<EOF > zap-auth.yaml
-          env:
-            contexts:
-              - name: "Auth Context"
-                urls:
-                  - "${CYPRESS_BASE_URL}"
-                authentication:
-                  method: form
-                  parameters:
-                    loginUrl: "${CYPRESS_BASE_URL}/web/index.php/auth/login"
-                    loginRequestData: "username={%username%}&password={%password%}"
-                users:
-                  - name: "test-user"
-                    credentials:
-                      username: "${ZAP_USERNAME}"
-                      password: "${ZAP_PASSWORD}"
-
-          jobs:
-            - type: spider
-              parameters:
-                context: "Auth Context"
-                user: "test-user"
-                maxDuration: 3
-
-            - type: activeScan
-              parameters:
-                context: "Auth Context"
-                user: "test-user"
-                maxScanDurationInMins: 5
-
-            - type: report
-              parameters:
-                template: traditional-html
-                reportDir: /zap/wrk/security-and-test-reports/zap-active
-                reportFile: authenticated-active-report.html
-          EOF
-
-      # -----------------------------------------
-      # Run ZAP Authenticated Scan
-      # -----------------------------------------
-      - name: Run Authenticated ZAP Scan
-        run: |
+          echo "Running Spider Scan..."
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-auth.yaml || true
+            zap.sh -cmd \
+            -quickurl $CYPRESS_BASE_URL \
+            -quickprogress \
+            -quickout /zap/wrk/security-and-test-reports/zap-spider/spider-report.html \
+            -spider || true
+
+      # =========================================
+      # 🟡 PASSIVE SCAN
+      # =========================================
+      - name: Run ZAP Passive Scan
+        if: env.ENABLE_PASSIVE_GithubActions == 'true'
+        run: |
+          echo "Running Passive Scan..."
+          docker run --rm \
+            -v ${{ github.workspace }}:/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -cmd \
+            -quickurl $CYPRESS_BASE_URL \
+            -quickprogress \
+            -quickout /zap/wrk/security-and-test-reports/zap-passive/passive-report.html || true
+
+      # =========================================
+      # 🔴 ACTIVE SCAN
+      # =========================================
+      - name: Run ZAP Active Scan
+        if: env.ENABLE_ACTIVE_GithubActions == 'true'
+        run: |
+          echo "Running Active Scan..."
+          docker run --rm \
+            -v ${{ github.workspace }}:/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -cmd \
+            -quickurl $CYPRESS_BASE_URL \
+            -quickprogress \
+            -quickout /zap/wrk/security-and-test-reports/zap-active/active-report.html \
+            -quickscan || true
+
+      # -----------------------------------------
+      # Debug - Show generated files
+      # -----------------------------------------
+      - name: Debug - List generated files
+        run: |
+          echo "===== GENERATED FILES ====="
+          ls -R security-and-test-reports || true
 
       # -----------------------------------------
       # Upload Reports
@@ -92,5 +99,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-authenticated-reports
+          name: zap-security-reports
           path: security-and-test-reports
+          if-no-files-found: warn
