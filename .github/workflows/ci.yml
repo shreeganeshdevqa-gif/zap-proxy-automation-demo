@@ -31,7 +31,7 @@ jobs:
           curl -I -L -s -o /dev/null -w "%{http_code}\n" "$CYPRESS_BASE_URL" || echo "WARNING: Target may be unreachable"
 
       # ------------------------------------------------------------
-      # 0. Create base directories (owned by root, but ZAP will write as root)
+      # 0. Create base directories
       # ------------------------------------------------------------
       - name: Create report directories
         run: |
@@ -69,6 +69,12 @@ jobs:
                 template: traditional-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-spider
                 reportFile: spider-report.html
+
+            - type: report
+              parameters:
+                template: traditional-xml
+                reportDir: /zap/wrk/security-and-test-reports/zap-spider
+                reportFile: spider-report.xml
           EOF
           echo "=== Spider config ==="
           cat zap-spider.yaml
@@ -123,6 +129,12 @@ jobs:
                 template: traditional-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-passive
                 reportFile: passive-report.html
+
+            - type: report
+              parameters:
+                template: traditional-xml
+                reportDir: /zap/wrk/security-and-test-reports/zap-passive
+                reportFile: passive-report.xml
           EOF
           echo "=== Passive config ==="
           cat zap-passive.yaml
@@ -182,6 +194,12 @@ jobs:
                 template: traditional-html
                 reportDir: /zap/wrk/security-and-test-reports/zap-active
                 reportFile: active-report.html
+
+            - type: report
+              parameters:
+                template: traditional-xml
+                reportDir: /zap/wrk/security-and-test-reports/zap-active
+                reportFile: active-report.xml
           EOF
           echo "=== Active config ==="
           cat zap-active.yaml
@@ -204,7 +222,7 @@ jobs:
           ls -la security-and-test-reports/zap-active/ || echo "No files found"
 
       # ------------------------------------------------------------
-      # 4. Debug: Full directory tree (always run)
+      # 4. Debug: Full directory tree
       # ------------------------------------------------------------
       - name: List all generated reports
         if: always()
