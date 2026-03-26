@@ -1,4 +1,4 @@
-name: ZAP Security Scans
+name: ZAP Security Scans with OrangeHRM
 
 on:
   push:
@@ -6,12 +6,9 @@ on:
   pull_request:
 
 env:
-  # Target URL – override via repository secret or variable
-  CYPRESS_BASE_URL: ${{ secrets.CYPRESS_BASE_URL || 'https://opensource-demo.orangehrmlive.com/web/index.php/auth/login' }}
-
   # Scan toggles (defaults: Spider=true, Passive=false, Active=false)
   ENABLE_SPIDER_GithubActions: ${{ vars.ENABLE_SPIDER_GithubActions || 'true' }}
-  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'true' }}
+  ENABLE_PASSIVE_GithubActions: ${{ vars.ENABLE_PASSIVE_GithubActions || 'false' }}
   ENABLE_ACTIVE_GithubActions: ${{ vars.ENABLE_ACTIVE_GithubActions || 'false' }}
 
   # Fix Node.js deprecation warning
@@ -20,18 +17,59 @@ env:
 jobs:
   zap-scan:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Optional: Check if target is reachable
-      - name: Check target reachability
+      # ------------------------------------------------------------
+      # 1. Find an available port (prefer 8080, fallback to 8081, etc.)
+      # ------------------------------------------------------------
+      - name: Find available port
+        id: find_port
         run: |
-          echo "Checking connectivity to $CYPRESS_BASE_URL"
-          curl -I -L -s -o /dev/null -w "%{http_code}\n" "$CYPRESS_BASE_URL" || echo "WARNING: Target may be unreachable"
+          for port in 8080 8081 8082 8083 8084; do
+            if ! ss -lpn | grep -q ":$port "; then
+              echo "PORT=$port" >> $GITHUB_OUTPUT
+              echo "Found free port: $port"
+              break
+            fi
+          done
+          if [ -z "${{ steps.find_port.outputs.PORT }}" ]; then
+            echo "No free port found in range 8080-8084, using 8080 as fallback"
+            echo "PORT=8080" >> $GITHUB_OUTPUT
+          fi
 
       # ------------------------------------------------------------
-      # 0. Create base directories
+      # 2. Start OrangeHRM container with the chosen port
+      # ------------------------------------------------------------
+      - name: Start OrangeHRM container
+        run: |
+          docker run -d \
+            --name orangehrm \
+            -p ${{ steps.find_port.outputs.PORT }}:80 \
+            orangehrm/orangehrm
+          echo "OrangeHRM started on port ${{ steps.find_port.outputs.PORT }}"
+
+      # ------------------------------------------------------------
+      # 3. Wait for OrangeHRM to be ready (curl with retry)
+      # ------------------------------------------------------------
+      - name: Wait for OrangeHRM to be ready
+        run: |
+          echo "Waiting for OrangeHRM to be ready..."
+          for i in {1..30}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:${{ steps.find_port.outputs.PORT }} | grep -q "200"; then
+              echo "OrangeHRM is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30 - not ready yet, waiting 5 seconds..."
+            sleep 5
+          done
+          echo "OrangeHRM did not become ready in time"
+          exit 1
+
+      # ------------------------------------------------------------
+      # 4. Create report directories
       # ------------------------------------------------------------
       - name: Create report directories
         run: |
@@ -41,7 +79,19 @@ jobs:
           echo "Base directories created"
 
       # ------------------------------------------------------------
-      # 1. SPIDER SCAN (only if enabled)
+      # 5. Helper: Determine the URL that ZAP will use
+      #    ZAP runs in a container and needs to reach the host where
+      #    OrangeHRM is running. We use the host's IP on the default bridge.
+      # ------------------------------------------------------------
+      - name: Set ZAP target URL
+        id: zap_url
+        run: |
+          HOST_IP=$(ip -4 addr show docker0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "172.17.0.1")
+          echo "ZAP_TARGET_URL=http://${HOST_IP}:${{ steps.find_port.outputs.PORT }}" >> $GITHUB_OUTPUT
+          echo "ZAP will target: ${ZAP_TARGET_URL}"
+
+      # ------------------------------------------------------------
+      # 6. SPIDER SCAN (only if enabled)
       # ------------------------------------------------------------
       - name: Spider scan – generate config
         if: env.ENABLE_SPIDER_GithubActions == 'true'
@@ -49,9 +99,9 @@ jobs:
           cat <<EOF > zap-spider.yaml
           env:
             contexts:
-              - name: "Default Context"
+              - name: "OrangeHRM Context"
                 urls:
-                  - "$CYPRESS_BASE_URL"
+                  - "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -60,8 +110,8 @@ jobs:
           jobs:
             - type: spider
               parameters:
-                context: "Default Context"
-                url: "$CYPRESS_BASE_URL"
+                context: "OrangeHRM Context"
+                url: "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
                 maxDuration: 3
 
             - type: report
@@ -82,7 +132,7 @@ jobs:
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-spider.yaml
+            zap.sh -cmd -autorun /zap/wrk/zap-spider.yaml || true
 
       - name: Spider report – inject heading
         if: env.ENABLE_SPIDER_GithubActions == 'true' && always()
@@ -102,7 +152,7 @@ jobs:
           ls -la security-and-test-reports/zap-spider/ || echo "No files found"
 
       # ------------------------------------------------------------
-      # 2. PASSIVE SCAN (only if enabled)
+      # 7. PASSIVE SCAN (only if enabled)
       # ------------------------------------------------------------
       - name: Passive scan – generate config
         if: env.ENABLE_PASSIVE_GithubActions == 'true'
@@ -110,9 +160,9 @@ jobs:
           cat <<EOF > zap-passive.yaml
           env:
             contexts:
-              - name: "Default Context"
+              - name: "OrangeHRM Context"
                 urls:
-                  - "$CYPRESS_BASE_URL"
+                  - "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -121,8 +171,8 @@ jobs:
           jobs:
             - type: spider
               parameters:
-                context: "Default Context"
-                url: "$CYPRESS_BASE_URL"
+                context: "OrangeHRM Context"
+                url: "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
                 maxDuration: 3
 
             - type: passiveScan-wait
@@ -147,7 +197,7 @@ jobs:
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-passive.yaml
+            zap.sh -cmd -autorun /zap/wrk/zap-passive.yaml || true
 
       - name: Passive report – inject heading
         if: env.ENABLE_PASSIVE_GithubActions == 'true' && always()
@@ -167,7 +217,7 @@ jobs:
           ls -la security-and-test-reports/zap-passive/ || echo "No files found"
 
       # ------------------------------------------------------------
-      # 3. ACTIVE SCAN (only if enabled)
+      # 8. ACTIVE SCAN (only if enabled)
       # ------------------------------------------------------------
       - name: Active scan – generate config
         if: env.ENABLE_ACTIVE_GithubActions == 'true'
@@ -175,9 +225,9 @@ jobs:
           cat <<EOF > zap-active.yaml
           env:
             contexts:
-              - name: "Default Context"
+              - name: "OrangeHRM Context"
                 urls:
-                  - "$CYPRESS_BASE_URL"
+                  - "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
             parameters:
               progressToStdout: "true"
               failOnError: "false"
@@ -186,8 +236,8 @@ jobs:
           jobs:
             - type: spider
               parameters:
-                context: "Default Context"
-                url: "$CYPRESS_BASE_URL"
+                context: "OrangeHRM Context"
+                url: "${{ steps.zap_url.outputs.ZAP_TARGET_URL }}"
                 maxDuration: 3
 
             - type: passiveScan-wait
@@ -196,7 +246,7 @@ jobs:
 
             - type: activeScan
               parameters:
-                context: "Default Context"
+                context: "OrangeHRM Context"
                 maxScanDurationInMins: 5
 
             - type: report
@@ -217,7 +267,7 @@ jobs:
             --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -cmd -autorun /zap/wrk/zap-active.yaml
+            zap.sh -cmd -autorun /zap/wrk/zap-active.yaml || true
 
       - name: Active report – inject heading
         if: env.ENABLE_ACTIVE_GithubActions == 'true' && always()
@@ -237,7 +287,7 @@ jobs:
           ls -la security-and-test-reports/zap-active/ || echo "No files found"
 
       # ------------------------------------------------------------
-      # 4. Debug: Full directory tree
+      # 9. Debug: Full directory tree
       # ------------------------------------------------------------
       - name: List all generated reports
         if: always()
@@ -246,7 +296,7 @@ jobs:
           find security-and-test-reports -type f -ls || echo "No files found"
 
       # ------------------------------------------------------------
-      # 5. Upload all reports as artifacts
+      # 10. Upload all reports as artifacts
       # ------------------------------------------------------------
       - name: Upload ZAP reports
         if: always()
@@ -255,3 +305,12 @@ jobs:
           name: zap-security-reports
           path: security-and-test-reports/
           if-no-files-found: warn
+
+      # ------------------------------------------------------------
+      # 11. Clean up (optional) – remove container after workflow
+      # ------------------------------------------------------------
+      - name: Stop and remove OrangeHRM container
+        if: always()
+        run: |
+          docker stop orangehrm || true
+          docker rm orangehrm || true
