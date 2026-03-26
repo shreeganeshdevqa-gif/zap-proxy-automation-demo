@@ -52,21 +52,34 @@ jobs:
           echo "OrangeHRM started on port ${{ steps.find_port.outputs.PORT }}"
 
       # ------------------------------------------------------------
-      # 3. Wait for OrangeHRM to be ready (check login page)
+      # 3. Wait for OrangeHRM to be ready (with extended timeout)
       # ------------------------------------------------------------
       - name: Wait for OrangeHRM to be ready
         run: |
           echo "Waiting for OrangeHRM to be ready..."
-          APP_URL="http://localhost:${{ steps.find_port.outputs.PORT }}/web/index.php/auth/login"
-          for i in {1..30}; do
-            if curl -s -o /dev/null -w "%{http_code}" "$APP_URL" | grep -q "200\|302"; then
-              echo "OrangeHRM is ready!"
-              exit 0
+          APP_HOST="localhost"
+          APP_PORT="${{ steps.find_port.outputs.PORT }}"
+          PATHS=("/" "/web/index.php/auth/login")
+          MAX_ATTEMPTS=60
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            for path in "${PATHS[@]}"; do
+              URL="http://${APP_HOST}:${APP_PORT}${path}"
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+              if [[ "$STATUS" == "200" || "$STATUS" == "302" ]]; then
+                echo "OrangeHRM is ready at $URL (HTTP $STATUS)!"
+                exit 0
+              fi
+            done
+            echo "Attempt $i/$MAX_ATTEMPTS - not ready yet, waiting 5 seconds..."
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "Container logs at attempt $i:"
+              docker logs orangehrm --tail 20
             fi
-            echo "Attempt $i/30 - not ready yet, waiting 5 seconds..."
             sleep 5
           done
           echo "OrangeHRM did not become ready in time"
+          echo "Final container logs:"
+          docker logs orangehrm --tail 50
           exit 1
 
       # ------------------------------------------------------------
@@ -308,7 +321,7 @@ jobs:
           if-no-files-found: warn
 
       # ------------------------------------------------------------
-      # 11. Clean up (optional) – remove container after workflow
+      # 11. Clean up – remove container after workflow
       # ------------------------------------------------------------
       - name: Stop and remove OrangeHRM container
         if: always()
