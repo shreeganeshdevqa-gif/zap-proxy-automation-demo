@@ -31,7 +31,7 @@ jobs:
           curl -I -L -s -o /dev/null -w "%{http_code}\n" "$CYPRESS_BASE_URL" || echo "WARNING: Target may be unreachable"
 
       # ------------------------------------------------------------
-      # 0. Create base directory (will be populated by scans)
+      # 0. Create base directories (owned by root, but ZAP will write as root)
       # ------------------------------------------------------------
       - name: Create report directories
         run: |
@@ -46,7 +46,6 @@ jobs:
       - name: Spider scan – generate config
         if: env.ENABLE_SPIDER_GithubActions == 'true'
         run: |
-          # Use double quotes so $CYPRESS_BASE_URL expands
           cat <<EOF > zap-spider.yaml
           env:
             contexts:
@@ -80,6 +79,7 @@ jobs:
         run: |
           mkdir -p security-and-test-reports/zap-spider
           docker run --rm \
+            --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-spider.yaml
@@ -133,6 +133,7 @@ jobs:
         run: |
           mkdir -p security-and-test-reports/zap-passive
           docker run --rm \
+            --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-passive.yaml
@@ -191,6 +192,7 @@ jobs:
         run: |
           mkdir -p security-and-test-reports/zap-active
           docker run --rm \
+            --user root \
             -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/zap-active.yaml
